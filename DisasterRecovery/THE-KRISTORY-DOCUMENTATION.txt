@@ -1,0 +1,563 @@
+# THE KRISTORY — COMPLETE PROJECT DOCUMENTATION
+# Disaster Recovery & Rebuild Guide
+# Last updated: March 5, 2026
+# ============================================================
+
+This document contains everything needed to rebuild The Kristory
+from scratch if all code and data are lost. It covers the tech
+stack, architecture, database schema, feature set, design system,
+deployment, data model, and dependencies.
+
+Keep this file safe — ideally in multiple locations (cloud storage,
+local backup, printed copy).
+
+
+# ============================================================
+# 1. WHAT IS THE KRISTORY?
+# ============================================================
+
+The Kristory is a shared daily journal PWA (Progressive Web App)
+for two users — Chris and Krista. It's a digital scrapbook and
+daily diary where they document their life together through
+narrative entries, photos, tagged items (movies, restaurants, etc.),
+trips, recipes, and memories.
+
+URL: https://the-kristory.vercel.app
+
+
+# ============================================================
+# 2. TECH STACK
+# ============================================================
+
+Frontend:
+  - Vite (build tool)
+  - React 18+ (UI framework)
+  - TypeScript (language)
+  - Tailwind CSS (styling)
+  - React Router v6 (routing)
+  - TanStack React Query v5 (server state management)
+  - Tiptap (rich text editor, built on ProseMirror)
+  - date-fns (date formatting/parsing)
+  - vite-plugin-pwa (PWA/service worker)
+
+Backend/Database:
+  - Supabase (PostgreSQL database + Storage + Auth)
+  - Supabase JS SDK v2
+  - Supabase Storage for photo uploads
+
+Deployment:
+  - Vercel (hosting, auto-deploy)
+  - Domain: the-kristory.vercel.app
+
+Environment Variables (in .env):
+  - VITE_SUPABASE_URL — your Supabase project URL
+  - VITE_SUPABASE_ANON_KEY — your Supabase anon/public key
+
+The app shares a Supabase instance with other apps (Axiom Tasks,
+Stint, Pulse). All Kristory tables are standalone — no table name
+prefixing needed because they have unique names.
+
+
+# ============================================================
+# 3. PROJECT FILE STRUCTURE
+# ============================================================
+
+src/
+  components/       — reusable UI components (BottomSheet, PhotoViewer, etc.)
+  components/ui/    — base UI primitives (Button, Card, Modal)
+  views/            — page-level components:
+    Journal.tsx       — main timeline view
+    EntryDetail.tsx   — single day entry read/edit
+    Explore.tsx       — search + browse
+    Lists.tsx         — category grid + trips + baby section
+    CategoryDetail.tsx — items within a category
+    OnThisDay.tsx     — memories from past years
+    Settings.tsx      — app settings, imports, baby profile
+    CreateTrip.tsx    — trip creation form
+    TripDetail.tsx    — trip detail/edit view
+    Baby.tsx          — baby milestones, timeline, firsts
+  hooks/            — custom React hooks:
+    useEntries.ts     — journal entry CRUD, photo upload
+    useTaggedItems.ts — tagged items, categories
+    useTrips.ts       — trips CRUD, suggested trips
+    useBaby.ts        — baby profile, milestones
+  lib/
+    supabase.ts       — Supabase client init
+    helpers.ts        — resizeImage, text truncation, etc.
+    constants.ts      — color values, config
+  types/            — TypeScript interfaces
+  assets/           — icons, logo
+public/
+  icon-192.png      — PWA icon (purple K on cream, Lora serif)
+  icon-512.png      — PWA icon (same)
+  favicon.ico       — browser tab icon
+  favicon.png       — browser tab icon
+supabase/
+  migrations/       — SQL migration files
+
+
+# ============================================================
+# 4. COMPLETE DATABASE SCHEMA
+# ============================================================
+
+ALL tables have RLS (Row Level Security) DISABLED.
+The app is for 2 trusted users — no auth, no RLS.
+
+CRITICAL: All Supabase queries with nested selects MUST use
+explicit FK hints (e.g. !entry_id, !category_id) or PostgREST
+returns 400 errors.
+
+--- SHARED (pre-existing) ---
+
+TABLE: users
+  id          UUID PK
+  name        TEXT NOT NULL
+  created_at  TIMESTAMPTZ DEFAULT now()
+
+  Data:
+    Chris  — 9df51388-65e8-44bf-bfad-65729744190b
+    Krista — cab9d09c-0083-4ce1-aaf5-9a045d8a4315
+
+--- JOURNAL ---
+
+TABLE: journal_entries
+  id          UUID PK DEFAULT gen_random_uuid()
+  entry_date  DATE UNIQUE NOT NULL
+  created_at  TIMESTAMPTZ DEFAULT now()
+  updated_at  TIMESTAMPTZ DEFAULT now()
+
+TABLE: entry_sections
+  id          UUID PK DEFAULT gen_random_uuid()
+  entry_id    UUID FK → journal_entries.id ON DELETE CASCADE
+  user_id     UUID FK → users.id
+  content     TEXT (stored as sanitized HTML)
+  created_at  TIMESTAMPTZ DEFAULT now()
+  updated_at  TIMESTAMPTZ DEFAULT now()
+  fts         TSVECTOR GENERATED ALWAYS AS (to_tsvector('english', coalesce(content, ''))) STORED
+  UNIQUE (entry_id, user_id)
+
+  INDEX: idx_entry_sections_fts ON entry_sections USING GIN (fts)
+
+TABLE: entry_photos
+  id            UUID PK DEFAULT gen_random_uuid()
+  entry_id      UUID FK → journal_entries.id ON DELETE CASCADE
+  user_id       UUID FK → users.id
+  storage_path  TEXT NOT NULL (format: {entry_date}/{uuid}.jpg)
+  display_order INTEGER DEFAULT 0
+  created_at    TIMESTAMPTZ DEFAULT now()
+
+--- CATEGORIES & TAGGED ITEMS ---
+
+TABLE: categories
+  id          UUID PK DEFAULT gen_random_uuid()
+  name        TEXT NOT NULL
+  emoji       TEXT
+  is_default  BOOLEAN DEFAULT false
+  user_id     UUID FK → users.id (required — set to Chris's ID for defaults)
+  created_at  TIMESTAMPTZ DEFAULT now()
+
+  Default categories (seeded):
+    🎬 Movies, 📺 TV Shows, 🍽 Restaurants, 🍳 Home Cooking,
+    🎭 Activities, 📖 Books, ✈️ Trips, 🎵 Music/Concerts,
+    🛒 Shopping, 👶 Baby
+
+TABLE: tagged_items
+  id                UUID PK DEFAULT gen_random_uuid()
+  entry_id          UUID FK → journal_entries.id ON DELETE CASCADE (NULLABLE — standalone items allowed)
+  category_id       UUID FK → categories.id
+  user_id           UUID FK → users.id
+  name              TEXT NOT NULL
+  rating            INTEGER CHECK 1-5, NULLABLE
+  location_name     TEXT NULLABLE
+  location_lat      DECIMAL NULLABLE
+  location_lng      DECIMAL NULLABLE
+  location_place_id TEXT NULLABLE
+  ingredients       TEXT NULLABLE (for Home Cooking recipes)
+  instructions      TEXT NULLABLE (for Home Cooking recipes)
+  item_date         DATE NULLABLE (when the thing happened, independent of journal entry)
+  created_at        TIMESTAMPTZ DEFAULT now()
+
+  INDEX: idx_tagged_items_name ON tagged_items USING GIN (to_tsvector('english', name))
+
+--- RECIPE TAGS (many-to-many for Home Cooking items) ---
+
+TABLE: recipe_tags
+  id          UUID PK DEFAULT gen_random_uuid()
+  name        TEXT NOT NULL UNIQUE
+  emoji       TEXT
+  created_at  TIMESTAMPTZ DEFAULT now()
+
+  Seeded: 🍝 Pasta, 🥗 Salad, 🍲 Soup, 🫙 Sauce, 🥪 Sandwich,
+          🍗 Protein, 🍞 Baking, 🍪 Sweets, 🥞 Pancakes,
+          🍪 Cookies, 🥦 Sides, 🍳 Breakfast
+
+TABLE: tagged_item_recipe_tags
+  tagged_item_id  UUID FK → tagged_items.id ON DELETE CASCADE
+  recipe_tag_id   UUID FK → recipe_tags.id ON DELETE CASCADE
+  PK (tagged_item_id, recipe_tag_id)
+
+--- PARTICIPANTS (who watched/read/visited) ---
+
+TABLE: tagged_item_participants
+  tagged_item_id  UUID FK → tagged_items.id ON DELETE CASCADE
+  user_id         UUID FK → users.id ON DELETE CASCADE
+  PK (tagged_item_id, user_id)
+
+--- TRIPS ---
+
+TABLE: trips
+  id               UUID PK DEFAULT gen_random_uuid()
+  title            TEXT NOT NULL
+  summary          TEXT NULLABLE
+  cover_photo_path TEXT NULLABLE
+  start_date       DATE NOT NULL
+  end_date         DATE NOT NULL
+  created_at       TIMESTAMPTZ DEFAULT now()
+
+TABLE: trip_entries
+  trip_id   UUID FK → trips.id ON DELETE CASCADE
+  entry_id  UUID FK → journal_entries.id ON DELETE CASCADE
+  PK (trip_id, entry_id)
+
+--- BABY ---
+
+TABLE: baby_milestones
+  id              UUID PK DEFAULT gen_random_uuid()
+  entry_id        UUID FK → journal_entries.id ON DELETE SET NULL (NULLABLE)
+  title           TEXT NOT NULL
+  milestone_type  TEXT NOT NULL DEFAULT 'custom'
+  milestone_date  DATE NOT NULL
+  notes           TEXT NULLABLE
+  photo_path      TEXT NULLABLE
+  created_at      TIMESTAMPTZ DEFAULT now()
+
+TABLE: baby_profile
+  id            UUID PK DEFAULT gen_random_uuid()
+  name          TEXT (default 'Baby')
+  due_date      DATE (2026-10-02)
+  birth_date    DATE NULLABLE
+  birth_weight  TEXT NULLABLE
+  birth_length  TEXT NULLABLE
+  notes         TEXT NULLABLE
+  created_at    TIMESTAMPTZ DEFAULT now()
+  updated_at    TIMESTAMPTZ DEFAULT now()
+
+--- SUPABASE STORAGE ---
+
+Bucket: kristory-photos
+  - Public access enabled
+  - Storage policies allow public INSERT, SELECT, UPDATE, DELETE
+    for bucket_id = 'kristory-photos'
+  - Photos stored at path: {entry_date}/{uuid}.jpg
+  - Client-side resize: max 1600px longest side, JPEG 85% quality
+
+
+# ============================================================
+# 5. COMPLETE FEATURE LIST
+# ============================================================
+
+USER MODEL:
+  - No authentication — user picker on every app launch
+  - "Who's writing today?" screen with Chris and Krista cards
+  - Selected user stored in React context (not persisted)
+
+JOURNAL TAB (main view):
+  - Today's entry at top with write/edit button
+  - Baby countdown widget (weeks to due date or age after birth)
+  - Timeline below: entries organized by month, collapsible
+  - Entries within trips grouped under trip header cards
+  - Collapsible years (current year expanded, past collapsed)
+  - Newest-first ordering at all levels
+  - Infinite scroll / load more months on demand
+  - Date picker to create entries for past dates
+
+ENTRY DETAIL/EDIT:
+  - Dual-author sections (Chris purple border, Krista pink border)
+  - Rich text editing via Tiptap (bold, italic, line break)
+  - Auto-save with 1.5s debounce, optimistic UI
+  - Photo gallery strip with "Edit mode" for deletion
+  - Client-side photo resize (1600px, 85% JPEG) before upload
+  - Fullscreen photo viewer (swipe, pinch-to-zoom, double-tap zoom)
+  - Tagged items with category, name, rating, location
+  - "Add Milestone" quick action for baby milestones
+  - Trip badge showing which trip the entry belongs to
+  - "Add to Trip" for unassigned entries
+
+EXPLORE TAB:
+  - Full-text search across entries and tagged items
+  - Filter by date range, category, rating
+  - Browse by category grid
+
+LISTS TAB:
+  - Trips section at top with trip cards
+  - Suggested trips (auto-detected from entries)
+  - Baby section with yellow accent card
+  - Category grid (Movies, TV Shows, Restaurants, etc.)
+  - Each category: sort by Recent/Top Rated/A-Z
+  - "+ Add [item]" for standalone items in any category
+  - Participant tagging (who watched/read/visited)
+
+HOME COOKING / BOOK OF FOOD:
+  - Enhanced view branded "The Untitled Book of Food"
+  - Recipe tag filter pills (Pasta, Salad, Soup, etc.)
+  - Recipe detail with ingredients + instructions
+  - "What should we make?" smart suggestion:
+    - Single dinner suggestion (weighted by rating)
+    - 5 dinners for the week (variety across tags)
+    - Ingredient search
+    - Random pick
+  - Import from text file with auto-tagging
+  - Multi-tag support per recipe
+
+TRIPS:
+  - Create retroactively by selecting date range
+  - Title, summary, cover photo (from trip entry photos)
+  - Trip detail: hero image, mini-timeline, all photos grid, tagged items
+  - Trip grouping in journal timeline (collapsible)
+  - Suggested trips auto-detected from entry patterns
+  - Add/remove entries, edit all fields
+
+BABY MILESTONES:
+  - Baby profile (name, due date, birth date, weight, length)
+  - Countdown widget on journal home screen
+  - Pregnancy milestones checklist (7 items)
+  - First year milestones checklist (10 items)
+  - Custom milestones
+  - Baby timeline (entries tagged 👶 + milestones)
+  - "Book of Firsts" keepsake view
+  - Settings: edit profile, toggle countdown
+
+ON THIS DAY:
+  - Memories from this date in previous years
+  - Entry cards with text excerpt, photos, tagged items
+  - Nearby dates if exact date has nothing
+
+SETTINGS:
+  - Dark mode toggle (Light/Dark/System)
+  - Manage categories
+  - Import Journal (Google Doc text file)
+  - Import Recipes (Book of Food text file)
+  - Baby Profile editor
+  - Baby countdown toggle
+  - Check for Updates (PWA service worker refresh)
+  - Export (JSON + PDF) — planned/partially built
+  - About section
+
+
+# ============================================================
+# 6. DESIGN SYSTEM
+# ============================================================
+
+LIGHT MODE:
+  --bg-page:       #EDE6DE  (warm pinkish beige)
+  --bg-card:       #F7F3EF  (off-white cream)
+  --border-card:   #DDD5CB  (warm tan)
+  --text-primary:  #2C2522  (dark warm charcoal)
+  --text-secondary:#8C8078  (warm gray)
+  --text-muted:    #B5ADA5  (light warm gray)
+  --accent:        #6B5CA5  (muted indigo)
+  --accent-hover:  #5A4B94  (darker indigo)
+  --border-divider:#E2DAD0  (warm dividers)
+  --chris-color:   #6B5CA5  (purple — Chris's entries)
+  --krista-color:  #D4708F  (rose/pink — Krista's entries)
+
+DARK MODE:
+  --bg-page:       #141414
+  --bg-card:       #1E1E1E
+  --border-card:   #2A2A2A
+  --text-primary:  #E8E0D8
+  --text-secondary:#9A938B
+  --text-muted:    #6B645C
+  --accent:        #8B7EC8
+  --accent-hover:  #9D92D4
+  --chris-color:   #8B7EC8
+  --krista-color:  #E88BA8
+
+BABY SECTION ACCENTS:
+  Light yellow: #FFF8E7
+  Soft mint:    #F0FAF0
+
+TYPOGRAPHY:
+  Headings:    Playfair Display (Google Fonts, weight 700)
+  Body/UI:     Inter (Google Fonts, weights 400/500/600)
+  Page titles: Playfair Display, 24px, bold
+  Body text:   Inter, 15px, regular, line-height 1.6
+  Meta text:   Inter, 12px, regular
+  Section hdrs:Inter, 14px, semibold, uppercase, tracking-wide
+
+SPACING:
+  Mobile padding: 16px horizontal
+  Desktop padding: 24px horizontal
+  Section gaps: 24px
+  Border radius: buttons 8px, cards 12px, modals 16px, inputs 10px
+  Shadows: 0 1px 3px rgba(0,0,0,0.04)
+  Min tap targets: 44px
+
+NAVIGATION:
+  Mobile: bottom tab bar with frosted glass (backdrop-filter blur)
+  4 tabs: Journal, Explore, Lists, On This Day
+  Desktop: sidebar navigation, max content width ~720px
+  Settings: gear icon in top-right header
+
+PWA ICONS:
+  Purple Lora serif "K" on cream (#F7F3EF) background
+  Rounded corners, subtle border
+  Sizes: 192x192 and 512x512
+
+APP LOGO/IDENTITY:
+  Name: "The Kristory"
+  Font: Playfair Display
+  Colors: purple #6B5CA5 on cream #F7F3EF
+  Pink accent: #D4708F
+
+
+# ============================================================
+# 7. ROUTING
+# ============================================================
+
+/               — User picker
+/journal        — Journal tab (timeline)
+/journal/:date  — Entry detail/edit (YYYY-MM-DD format)
+/explore        — Explore tab (search + browse)
+/lists          — Lists tab (categories grid)
+/lists/:catId   — Category detail
+/on-this-day    — On This Day tab
+/trips/new      — Create trip
+/trips/:tripId  — Trip detail/edit
+/baby           — Baby milestones view
+/settings       — Settings
+
+
+# ============================================================
+# 8. KEY TECHNICAL PATTERNS
+# ============================================================
+
+SUPABASE QUERIES — FK HINTS:
+  Always use explicit foreign key hints on nested selects:
+  .select('*, sections:entry_sections!entry_id(*),
+           photos:entry_photos!entry_id(*),
+           tagged_items:tagged_items!entry_id(*,
+             category:categories!category_id(*))')
+  Without !fk_column hints, PostgREST returns 400 errors.
+
+STATE MANAGEMENT:
+  - React Context: current user, dark mode preference
+  - TanStack React Query: all server state
+  - Optimistic updates on all mutations
+  - Auto-save with debounce (1.5s)
+
+IMAGE HANDLING:
+  - Client-side resize before upload
+  - Max 1600px on longest side
+  - JPEG quality 0.85
+  - Canvas-based resize with Math.round() on dimensions
+  - URL.revokeObjectURL after use (memory leak prevention)
+  - Upload to Supabase Storage: kristory-photos/{date}/{uuid}.jpg
+
+PWA:
+  - vite-plugin-pwa with autoUpdate
+  - skipWaiting + clientsClaim for immediate updates
+  - Cache Google Fonts
+  - "Check for Updates" button in Settings
+
+DATE HANDLING:
+  - date-fns for all formatting/parsing
+  - Store as YYYY-MM-DD (Postgres DATE type)
+  - Journal dates in user's local timezone, not UTC
+
+RICH TEXT:
+  - Tiptap editor (bold, italic, hard break)
+  - Content stored as sanitized HTML
+  - Displayed with colored left border per author
+
+
+# ============================================================
+# 9. DATA TO BACK UP
+# ============================================================
+
+If doing regular backups, these are the critical data sources:
+
+1. SUPABASE DATABASE — all tables listed in section 4
+   Export via: Supabase dashboard → SQL Editor → pg_dump
+   Or use the in-app JSON export
+
+2. SUPABASE STORAGE — kristory-photos bucket
+   All uploaded photos live here
+   Can be downloaded via Supabase dashboard or API
+
+3. SOURCE CODE — the Git repository
+   Contains all app code, migrations, scripts
+
+4. ENVIRONMENT VARIABLES
+   VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
+
+5. ORIGINAL IMPORT FILES (keep copies)
+   - The Kristory journal Google Doc exports (2021-2025)
+   - Untitled_book_of_food.txt (recipe collection)
+
+6. THIS DOCUMENT + THE REBUILD PROMPT
+
+
+# ============================================================
+# 10. KNOWN ISSUES & QUIRKS
+# ============================================================
+
+- Categories table requires user_id (not nullable) — use Chris's
+  UUID when seeding defaults
+- entry_id on tagged_items is NULLABLE — standalone recipes and
+  list items don't need a journal entry
+- Storage bucket requires explicit RLS policies for uploads
+  (CREATE POLICY for INSERT/SELECT/UPDATE/DELETE)
+- PWA service worker can cache old versions aggressively — use
+  "Check for Updates" in Settings or clear site data
+- Photo upload on mobile was fixed by: adding proper error
+  handling, fixing canvas dimension rounding, fixing object URL
+  memory leaks, adding storage RLS policies
+- Photo delete button uses "Edit mode" toggle to prevent
+  accidental deletion on mobile (fat finger issue)
+- The 2025 journal entries were initially imported as 2026 and
+  required a SQL fix: UPDATE journal_entries SET entry_date =
+  entry_date - INTERVAL '1 year' WHERE EXTRACT(YEAR FROM
+  entry_date) = 2026
+- Import parser needs to handle "Month Day, Year:" format with
+  year extraction from the date header
+- vite.svg 404 error on load is harmless (default Vite favicon
+  never replaced in index.html)
+
+
+# ============================================================
+# 11. VERSION HISTORY / BUILD TIMELINE
+# ============================================================
+
+Session 1 (Feb 28, 2026):
+  - Full spec designed through interview process
+  - Complete Claude Code prompt written
+  - Initial build of entire app via Claude Code
+  - Database migration created and run
+  - Google Doc import (CLI script + in-app)
+  - Past date entry creation
+
+Session 2 (Mar 1, 2026):
+  - Journal entry formatting for 2021-2023 imports
+  - Fixed import parser for "Month Day, Year:" format
+  - Fixed 2025→2026 date offset bug
+  - Added collapsible years to timeline
+  - Fixed year ordering (newest first)
+
+Session 3 (Mar 2, 2026):
+  - Logo design (purple Lora serif K on cream)
+  - PWA icons (192 + 512) and favicon generated
+  - Book of Food / recipe system designed and built
+  - Recipe tags, ingredients, instructions fields
+  - "What should we make?" suggestion feature
+  - Recipe import with auto-tagging
+  - Standalone list items for all categories
+  - Participant tagging (who watched/read/visited)
+  - Photo upload debugging (Storage RLS fix)
+  - Photo edit mode (prevent accidental deletion)
+  - Photo resize increased to 1600px/85% for print quality
+  - Trips feature with full CRUD
+  - Trip auto-suggestion from entry patterns
+  - Baby milestones and tracking
+  - Pregnancy countdown widget
+  - PWA auto-update (skipWaiting + clientsClaim)

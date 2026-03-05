@@ -1,0 +1,145 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: 'Playfair Display', serif;
+  --font-sans: 'Inter', sans-serif;
+
+  --color-bg-page: #EDE6DE;
+  --color-bg-card: #F7F3EF;
+  --color-border-card: #DDD5CB;
+  --color-text-primary: #2C2522;
+  --color-text-secondary: #8C8078;
+  --color-text-muted: #B5ADA5;
+  --color-accent: #6B5CA5;
+  --color-accent-hover: #5A4B94;
+  --color-border-divider: #E2DAD0;
+  --color-input-bg: #F7F3EF;
+  --color-chris: #6B5CA5;
+  --color-krista: #D4708F;
+}
+
+:root {
+  --bg-page: #EDE6DE;
+  --bg-card: #F7F3EF;
+  --border-card: #DDD5CB;
+  --text-primary: #2C2522;
+  --text-secondary: #8C8078;
+  --text-muted: #B5ADA5;
+  --accent: #6B5CA5;
+  --accent-hover: #5A4B94;
+  --border-divider: #E2DAD0;
+  --input-bg: #F7F3EF;
+  --chris-color: #6B5CA5;
+  --krista-color: #D4708F;
+}
+
+html.dark {
+  --bg-page: #141414;
+  --bg-card: #1E1E1E;
+  --border-card: #2A2A2A;
+  --text-primary: #E8E0D8;
+  --text-secondary: #9A938B;
+  --text-muted: #6B645C;
+  --accent: #8B7EC8;
+  --accent-hover: #9D92D4;
+  --border-divider: #2A2A2A;
+  --input-bg: #1E1E1E;
+  --chris-color: #8B7EC8;
+  --krista-color: #E88BA8;
+
+  --color-bg-page: #141414;
+  --color-bg-card: #1E1E1E;
+  --color-border-card: #2A2A2A;
+  --color-text-primary: #E8E0D8;
+  --color-text-secondary: #9A938B;
+  --color-text-muted: #6B645C;
+  --color-accent: #8B7EC8;
+  --color-accent-hover: #9D92D4;
+  --color-border-divider: #2A2A2A;
+  --color-input-bg: #1E1E1E;
+  --color-chris: #8B7EC8;
+  --color-krista: #E88BA8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tiptap editor styles */
+.tiptap {
+  outline: none;
+  min-height: 120px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.tiptap p {
+  margin: 0 0 0.5em 0;
+}
+
+.tiptap p:last-child {
+  margin-bottom: 0;
+}
+
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--text-muted);
+  pointer-events: none;
+  height: 0;
+}
+
+/* Smooth collapse animation */
+.collapsible-content {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 200ms ease;
+}
+
+.collapsible-content.open {
+  grid-template-rows: 1fr;
+}
+
+.collapsible-content > div {
+  overflow: hidden;
+}
+
+/* Hide scrollbar for photo strip */
+.photo-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.photo-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Subtle scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-card);
+  border-radius: 3px;
+}
+
+/* Bottom sheet backdrop */
+.backdrop {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
