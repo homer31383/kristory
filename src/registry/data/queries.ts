@@ -13,6 +13,7 @@ import type {
   BabylistPerson,
   CatalogItem,
   CatalogTier,
+  CatalogTierOverride,
   CustomItem,
   ItemState,
   ItemStateValue,
@@ -116,6 +117,97 @@ export async function loadPicks(registryId: string): Promise<Pick[]> {
     .eq('registry_id', registryId)
   if (error) throw error
   return data as Pick[]
+}
+
+export async function loadCatalogTierOverrides(
+  registryId: string,
+): Promise<CatalogTierOverride[]> {
+  const { data, error } = await supabase
+    .from('babylist_catalog_tier_overrides')
+    .select('*')
+    .eq('registry_id', registryId)
+  if (error) throw error
+  return data as CatalogTierOverride[]
+}
+
+export async function upsertCatalogTierOverride(input: {
+  registryId: string
+  catalogTierId: string
+  product: string | null
+  priceStr: string | null
+  unitCost: number | null
+  note: string | null
+  url: string | null
+  updatedBy: string | null
+}): Promise<void> {
+  const { error } = await supabase
+    .from('babylist_catalog_tier_overrides')
+    .upsert(
+      {
+        registry_id: input.registryId,
+        catalog_tier_id: input.catalogTierId,
+        product: input.product,
+        price_str: input.priceStr,
+        unit_cost: input.unitCost,
+        note: input.note,
+        url: input.url,
+        updated_at: new Date().toISOString(),
+        updated_by: input.updatedBy,
+      },
+      { onConflict: 'registry_id,catalog_tier_id' },
+    )
+  if (error) throw error
+}
+
+export async function deleteCatalogTierOverride(input: {
+  registryId: string
+  catalogTierId: string
+}): Promise<void> {
+  const { error } = await supabase
+    .from('babylist_catalog_tier_overrides')
+    .delete()
+    .eq('registry_id', input.registryId)
+    .eq('catalog_tier_id', input.catalogTierId)
+  if (error) throw error
+}
+
+/**
+ * Merge per-registry tier overrides on top of the raw catalog. Any non-null
+ * override field replaces the catalog default; null fields fall back. The
+ * resulting tier carries `hasOverride: true` if a row existed for it.
+ *
+ * Pure function — used by useRegistryData and by importCsv (which needs to
+ * detect divergence against the *raw* catalog so it doesn't compare against
+ * already-overridden values).
+ */
+export function mergeOverridesIntoCatalog(
+  catalog: ItemWithTiers[],
+  overrides: CatalogTierOverride[],
+): ItemWithTiers[] {
+  if (overrides.length === 0) {
+    return catalog.map((it) => ({
+      ...it,
+      tiers: it.tiers.map((t) => ({ ...t, hasOverride: false })),
+    }))
+  }
+  const byTier = new Map<string, CatalogTierOverride>()
+  for (const o of overrides) byTier.set(o.catalog_tier_id, o)
+  return catalog.map((it) => ({
+    ...it,
+    tiers: it.tiers.map((t) => {
+      const o = byTier.get(t.id)
+      if (!o) return { ...t, hasOverride: false }
+      return {
+        ...t,
+        product: o.product ?? t.product,
+        price_str: o.price_str ?? t.price_str,
+        unit_cost: o.unit_cost ?? t.unit_cost,
+        note: o.note ?? t.note,
+        url: o.url ?? t.url,
+        hasOverride: true,
+      }
+    }),
+  }))
 }
 
 export async function loadItemStates(registryId: string): Promise<ItemState[]> {

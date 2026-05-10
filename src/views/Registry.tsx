@@ -29,10 +29,12 @@ import {
   addPick,
   clearItemState,
   deleteAlternative,
+  deleteCatalogTierOverride,
   deleteCustomItem,
   deletePick,
   updateAlternative,
   updatePickQty,
+  upsertCatalogTierOverride,
   upsertItemState,
 } from '../registry/data/queries'
 import type { ItemStateValue, Pick } from '../registry/types'
@@ -310,6 +312,32 @@ export default function Registry() {
     await updateAlternative(id, patch)
   }
 
+  async function handleSubmitCatalogEdit(
+    catalogTierId: string,
+    patch: {
+      product: string
+      price_str: string | null
+      unit_cost: number | null
+      note: string | null
+      url: string | null
+    },
+  ) {
+    await upsertCatalogTierOverride({
+      registryId: REGISTRY_ID,
+      catalogTierId,
+      product: patch.product,
+      priceStr: patch.price_str,
+      unitCost: patch.unit_cost,
+      note: patch.note,
+      url: patch.url,
+      updatedBy: personId,
+    })
+  }
+
+  async function handleResetCatalog(catalogTierId: string) {
+    await deleteCatalogTierOverride({ registryId: REGISTRY_ID, catalogTierId })
+  }
+
   async function handleDeleteCustom(id: string) {
     if (!confirm('Delete this custom item? This will remove all picks attached to it.')) return
     await deleteCustomItem(id)
@@ -464,6 +492,7 @@ export default function Registry() {
                       removingPickIds={data.removingPickIds}
                       remoteAlternativeIds={data.remoteAlternativeIds}
                       remoteCustomIds={data.remoteCustomIds}
+                      remoteOverrideTierIds={data.remoteOverrideTierIds}
                       clearRemote={data.clearRemoteFlag}
                       onAddAlternative={(t) =>
                         setModal({
@@ -477,6 +506,16 @@ export default function Registry() {
                         setModal({ kind: 'alternative-edit', alt, parentLabel })
                       }
                       onDeleteAlternative={handleDeleteAlternative}
+                      onEditCatalogTier={(tier, parentLabel) =>
+                        setModal({
+                          kind: 'catalog-edit',
+                          tier,
+                          parentLabel,
+                          hasOverride: data.catalogTierOverrides.some(
+                            (o) => o.catalog_tier_id === tier.id,
+                          ),
+                        })
+                      }
                       onTogglePickCatalog={handleTogglePickCatalog}
                       onTogglePickCustom={handleTogglePickCustom}
                       onTogglePickAlternative={handleTogglePickAlternative}
@@ -522,6 +561,8 @@ export default function Registry() {
           onSubmitCustom={handleAddCustomItem}
           onSubmitAlternativeNew={handleAddAlternative}
           onSubmitAlternativeEdit={handleEditAlternative}
+          onSubmitCatalogEdit={handleSubmitCatalogEdit}
+          onResetCatalog={handleResetCatalog}
         />
       )}
 

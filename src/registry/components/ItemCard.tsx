@@ -31,7 +31,10 @@ interface Props {
   removingPickIds: Set<string>
   remoteAlternativeIds: Set<string>
   remoteCustomIds: Set<string>
-  clearRemote: (kind: 'pick' | 'custom' | 'alt' | 'state', id: string) => void
+  /** Catalog tier IDs whose override just changed remotely — drives the
+   *  highlight-ring animation on the affected tier card. */
+  remoteOverrideTierIds: Set<string>
+  clearRemote: (kind: 'pick' | 'custom' | 'alt' | 'state' | 'override', id: string) => void
   onAddAlternative: (target: {
     catalogItemId: string | null
     customItemId: string | null
@@ -39,6 +42,9 @@ interface Props {
   }) => void
   onEditAlternative: (alt: Alternative, parentLabel: string) => void
   onDeleteAlternative: (id: string) => void
+  /** Open the catalog-tier-edit modal. ItemCard wires this to TierCard for
+   *  real catalog tiers (skipping synthetic custom-as-tier cards). */
+  onEditCatalogTier: (tier: CatalogTier, parentLabel: string) => void
   onTogglePickCatalog: (tierId: string) => void
   onTogglePickCustom: (customItemId: string) => void
   onTogglePickAlternative: (altId: string) => void
@@ -60,10 +66,12 @@ export default function ItemCard(props: Props) {
     removingPickIds,
     remoteAlternativeIds,
     remoteCustomIds,
+    remoteOverrideTierIds,
     clearRemote,
     onAddAlternative,
     onEditAlternative,
     onDeleteAlternative,
+    onEditCatalogTier,
     onTogglePickCatalog,
     onTogglePickCustom,
     onTogglePickAlternative,
@@ -121,14 +129,23 @@ export default function ItemCard(props: Props) {
     display.kind === 'catalog' ? a.catalog_item_id === itemId : a.custom_item_id === itemId,
   )
 
-  const tierDisplays: { display: DisplayTier; tierKey: string; isRemoteIn: boolean }[] = []
+  type TierDisplayEntry = {
+    display: DisplayTier
+    tierKey: string
+    /** True if this card's remote-arrival animation should play. */
+    isRemoteIn: boolean
+    /** Which set we should clear when the animation ends. */
+    remoteSource: 'alt' | 'override' | null
+  }
+  const tierDisplays: TierDisplayEntry[] = []
 
   if (display.kind === 'catalog') {
     for (const t of display.item.tiers) {
       tierDisplays.push({
         display: { kind: 'catalog', tier: t },
         tierKey: `tier:${t.id}`,
-        isRemoteIn: false,
+        isRemoteIn: remoteOverrideTierIds.has(t.id),
+        remoteSource: remoteOverrideTierIds.has(t.id) ? 'override' : null,
       })
     }
   } else {
@@ -148,6 +165,7 @@ export default function ItemCard(props: Props) {
       display: { kind: 'catalog', tier: synthetic },
       tierKey: `custom:${c.id}`,
       isRemoteIn: false,
+      remoteSource: null,
     })
   }
 
@@ -156,6 +174,7 @@ export default function ItemCard(props: Props) {
       display: { kind: 'alternative', alt: a },
       tierKey: `alt:${a.id}`,
       isRemoteIn: remoteAlternativeIds.has(a.id),
+      remoteSource: remoteAlternativeIds.has(a.id) ? 'alt' : null,
     })
   }
 
@@ -403,16 +422,21 @@ export default function ItemCard(props: Props) {
           marginTop: 16,
         }}
       >
-        {tierDisplays.map(({ display: td, tierKey, isRemoteIn }) => {
+        {tierDisplays.map(({ display: td, tierKey, isRemoteIn, remoteSource }) => {
           const info = resolvePickInfo(td)
           const myQty = info.myPick?.qty ?? defaultQty
-          const altId = td.kind === 'alternative' ? td.alt.id : null
+          const isRealCatalogTier =
+            td.kind === 'catalog' && !td.tier.id.startsWith('custom-as-tier:')
           return (
             <div
               key={tierKey}
               className={isRemoteIn ? 'card-remote-in' : ''}
               onAnimationEnd={() => {
-                if (altId && isRemoteIn) clearRemote('alt', altId)
+                if (!isRemoteIn) return
+                if (remoteSource === 'alt' && td.kind === 'alternative')
+                  clearRemote('alt', td.alt.id)
+                else if (remoteSource === 'override' && td.kind === 'catalog')
+                  clearRemote('override', td.tier.id)
               }}
             >
               <TierCard
@@ -445,6 +469,11 @@ export default function ItemCard(props: Props) {
                 }
                 onDeleteAlternative={
                   td.kind === 'alternative' ? () => onDeleteAlternative(td.alt.id) : undefined
+                }
+                onEditCatalog={
+                  isRealCatalogTier && td.kind === 'catalog'
+                    ? () => onEditCatalogTier(td.tier, itemName)
+                    : undefined
                 }
               />
             </div>

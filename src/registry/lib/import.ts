@@ -24,10 +24,17 @@ import {
   loadCustomItems,
   loadPeople,
   loadPicks,
+  upsertCatalogTierOverride,
   upsertItemState,
   type ItemWithTiers,
 } from '../data/queries'
-import type { Alternative, BabylistPerson, CustomItem, ItemStateValue } from '../types'
+import type {
+  Alternative,
+  BabylistPerson,
+  CatalogTier,
+  CustomItem,
+  ItemStateValue,
+} from '../types'
 import type { ParsedCsvRow } from './csv'
 
 export interface ImportSummary {
@@ -106,6 +113,40 @@ export async function importCsv(
    * single item generates many rows (one per picked tier).
    */
   const stateAppliedFor = new Set<string>()
+
+  /**
+   * Catalog tiers we've already upserted an override for during this import.
+   * Same dedupe trick — many CSV rows can reference the same tier (Chris and
+   * Krista both picking Budget on the same item).
+   */
+  const overrideAppliedFor = new Set<string>()
+  async function maybeApplyCatalogOverride(
+    tier: CatalogTier,
+    row: ParsedCsvRow,
+  ): Promise<void> {
+    if (overrideAppliedFor.has(tier.id)) return
+    const rowUnitCost = safeUnitCost(row.totalCost, row.qty)
+    const diverges =
+      neq(tier.product, row.product) ||
+      neq(tier.price_str, row.priceStr) ||
+      neq(tier.note, row.note) ||
+      neq(tier.url, row.link) ||
+      (rowUnitCost != null && tier.unit_cost != null && rowUnitCost !== tier.unit_cost) ||
+      (rowUnitCost != null && tier.unit_cost == null) ||
+      (rowUnitCost == null && tier.unit_cost != null)
+    if (!diverges) return
+    overrideAppliedFor.add(tier.id)
+    await upsertCatalogTierOverride({
+      registryId,
+      catalogTierId: tier.id,
+      product: emptyToNull(row.product),
+      priceStr: emptyToNull(row.priceStr),
+      unitCost: rowUnitCost,
+      note: emptyToNull(row.note),
+      url: emptyToNull(row.link),
+      updatedBy: person!.id,
+    })
+  }
   async function applyState(
     kind: 'catalog' | 'custom',
     id: string,
@@ -200,15 +241,21 @@ export async function importCsv(
         const ti = catalogMatch!.tiers.find(
           (t) => t.tier.toLowerCase() === row.tier.toLowerCase(),
         )
-        if (ti && !existingTierPicks.has(ti.id)) {
-          await addPick(
-            registryId,
-            person.id,
-            { kind: 'tier', catalog_tier_id: ti.id },
-            row.qty || 1,
-          )
-          existingTierPicks.add(ti.id)
-          pickCount++
+        if (ti) {
+          // Catalog-side import: if the CSV row's product/price/notes/link
+          // differ from the seed catalog, store the deltas as a per-registry
+          // override so the imported view matches.
+          await maybeApplyCatalogOverride(ti, row)
+          if (!existingTierPicks.has(ti.id)) {
+            await addPick(
+              registryId,
+              person.id,
+              { kind: 'tier', catalog_tier_id: ti.id },
+              row.qty || 1,
+            )
+            existingTierPicks.add(ti.id)
+            pickCount++
+          }
         }
       } else if (parentCustomId && !existingCustomPicks.has(parentCustomId)) {
         await addPick(
@@ -231,6 +278,17 @@ function safeUnitCost(totalCostStr: string, qty: number): number | null {
   if (!Number.isFinite(n) || n <= 0) return null
   const q = qty > 0 ? qty : 1
   return Math.round((n / q) * 100) / 100
+}
+
+function neq(a: string | null | undefined, b: string | null | undefined): boolean {
+  const an = (a ?? '').trim()
+  const bn = (b ?? '').trim()
+  return an !== bn
+}
+
+function emptyToNull(s: string | null | undefined): string | null {
+  const t = (s ?? '').trim()
+  return t === '' ? null : t
 }
 
 function sameAlt(

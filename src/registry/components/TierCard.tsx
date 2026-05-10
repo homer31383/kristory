@@ -20,6 +20,9 @@ interface Props {
   onChangeQty: (qty: number) => void
   onEditAlternative?: () => void
   onDeleteAlternative?: () => void
+  /** Open the catalog-edit modal for this tier. Provided only for real
+   *  catalog tiers — not for synthetic custom-as-tier rows. */
+  onEditCatalog?: () => void
 }
 
 export default function TierCard(props: Props) {
@@ -37,6 +40,7 @@ export default function TierCard(props: Props) {
     clearRemote,
     onEditAlternative,
     onDeleteAlternative,
+    onEditCatalog,
   } = props
 
   const tierLabel = display.kind === 'catalog' ? display.tier.tier : 'Alternative'
@@ -45,6 +49,9 @@ export default function TierCard(props: Props) {
   const unitCost = display.kind === 'catalog' ? display.tier.unit_cost : display.alt.unit_cost
   const note = display.kind === 'catalog' ? display.tier.note : display.alt.note
   const url = display.kind === 'catalog' ? display.tier.url : display.alt.url
+  const isCatalogTier =
+    display.kind === 'catalog' && !display.tier.id.startsWith('custom-as-tier:')
+  const hasOverride = isCatalogTier && display.kind === 'catalog' && display.tier.hasOverride === true
 
   const isPicked = !!myPickId
   const labelColors: Record<string, { bg: string; fg: string }> = {
@@ -74,7 +81,8 @@ export default function TierCard(props: Props) {
         transition: 'all 0.18s ease',
       }}
     >
-      {display.kind === 'alternative' && (
+      {(display.kind === 'alternative' ||
+        (isCatalogTier && onEditCatalog)) && (
         <div
           style={{
             position: 'absolute',
@@ -85,42 +93,37 @@ export default function TierCard(props: Props) {
             zIndex: 2,
           }}
         >
-          {onEditAlternative && (
+          {display.kind === 'alternative' && onEditAlternative && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
                 onEditAlternative()
               }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--ink-faint)',
-                fontSize: 11,
-                cursor: 'pointer',
-                textDecoration: 'underline',
-                padding: '4px 4px',
-              }}
+              style={cornerActionStyle}
             >
               Edit
             </button>
           )}
-          {onDeleteAlternative && (
+          {display.kind === 'alternative' && onDeleteAlternative && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
                 onDeleteAlternative()
               }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--ink-faint)',
-                fontSize: 11,
-                cursor: 'pointer',
-                textDecoration: 'underline',
-                padding: '4px 4px',
-              }}
+              style={cornerActionStyle}
             >
               Remove
+            </button>
+          )}
+          {isCatalogTier && onEditCatalog && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onEditCatalog()
+              }}
+              style={cornerActionStyle}
+            >
+              Edit
             </button>
           )}
         </div>
@@ -128,7 +131,9 @@ export default function TierCard(props: Props) {
 
       <span
         style={{
-          display: 'inline-block',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
           fontSize: 10,
           fontWeight: 700,
           letterSpacing: '0.18em',
@@ -141,6 +146,19 @@ export default function TierCard(props: Props) {
         }}
       >
         {tierLabel}
+        {hasOverride && (
+          <span
+            aria-label="Edited for this registry"
+            title="Edited for this registry"
+            style={{
+              display: 'inline-block',
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: 'var(--terracotta)',
+            }}
+          />
+        )}
       </span>
 
       <div
@@ -275,6 +293,16 @@ export default function TierCard(props: Props) {
       />
     </div>
   )
+}
+
+const cornerActionStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  color: 'var(--ink-faint)',
+  fontSize: 11,
+  cursor: 'pointer',
+  textDecoration: 'underline',
+  padding: '4px 4px',
 }
 
 function QtyControls({

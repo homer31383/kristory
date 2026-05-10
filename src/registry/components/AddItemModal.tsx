@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { PRIORITY_OPTIONS, WHERE_OPTIONS } from '../config'
 import { parsePriceStr } from '../lib/money'
-import type { Alternative, CustomItem } from '../types'
+import type { Alternative, CatalogTier, CustomItem } from '../types'
 
 export type AddItemMode =
   | { kind: 'custom' }
@@ -13,6 +13,13 @@ export type AddItemMode =
       targetCustomItemId: string | null
     }
   | { kind: 'alternative-edit'; alt: Alternative; parentLabel: string }
+  | {
+      kind: 'catalog-edit'
+      tier: CatalogTier
+      parentLabel: string
+      /** True if a per-registry override exists; toggles the Reset button. */
+      hasOverride: boolean
+    }
 
 interface Props {
   mode: AddItemMode
@@ -39,6 +46,17 @@ interface Props {
       url: string | null
     },
   ) => Promise<void>
+  onSubmitCatalogEdit: (
+    catalogTierId: string,
+    data: {
+      product: string
+      price_str: string | null
+      unit_cost: number | null
+      note: string | null
+      url: string | null
+    },
+  ) => Promise<void>
+  onResetCatalog: (catalogTierId: string) => Promise<void>
 }
 
 export default function AddItemModal({
@@ -47,6 +65,8 @@ export default function AddItemModal({
   onSubmitCustom,
   onSubmitAlternativeNew,
   onSubmitAlternativeEdit,
+  onSubmitCatalogEdit,
+  onResetCatalog,
 }: Props) {
   const [name, setName] = useState('')
   const [section, setSection] = useState('')
@@ -66,6 +86,11 @@ export default function AddItemModal({
       setPriceStr(mode.alt.price_str ?? '')
       setNote(mode.alt.note ?? '')
       setUrl(mode.alt.url ?? '')
+    } else if (mode.kind === 'catalog-edit') {
+      setProduct(mode.tier.product ?? '')
+      setPriceStr(mode.tier.price_str ?? '')
+      setNote(mode.tier.note ?? '')
+      setUrl(mode.tier.url ?? '')
     }
   }, [mode])
 
@@ -98,8 +123,16 @@ export default function AddItemModal({
           targetCatalogItemId: mode.targetCatalogItemId,
           targetCustomItemId: mode.targetCustomItemId,
         })
-      } else {
+      } else if (mode.kind === 'alternative-edit') {
         await onSubmitAlternativeEdit(mode.alt.id, {
+          product: product.trim() || 'Untitled',
+          price_str: priceStr.trim() || null,
+          unit_cost: parsedCost,
+          note: note.trim() || null,
+          url: url.trim() || null,
+        })
+      } else {
+        await onSubmitCatalogEdit(mode.tier.id, {
           product: product.trim() || 'Untitled',
           price_str: priceStr.trim() || null,
           unit_cost: parsedCost,
@@ -114,13 +147,32 @@ export default function AddItemModal({
     }
   }
 
-  const isAlt = mode.kind !== 'custom'
+  async function handleReset() {
+    if (mode.kind !== 'catalog-edit') return
+    if (!confirm('Discard your edits and revert this tier to the original suggestion?')) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      await onResetCatalog(mode.tier.id)
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setSubmitting(false)
+    }
+  }
+
+  // Structural fields (name/section/priority/where/qty) only show in the
+  // "custom" mode. Alternatives and catalog-edits inherit from their parent.
+  const showStructuralFields = mode.kind === 'custom'
+  const showResetButton = mode.kind === 'catalog-edit' && mode.hasOverride
   const title =
     mode.kind === 'custom'
       ? 'Add a custom item'
       : mode.kind === 'alternative-new'
         ? `Add alternative for ${mode.parentLabel}`
-        : `Edit alternative for ${mode.parentLabel}`
+        : mode.kind === 'alternative-edit'
+          ? `Edit alternative for ${mode.parentLabel}`
+          : `Edit ${mode.tier.tier} for ${mode.parentLabel}`
 
   return (
     <div
@@ -157,7 +209,7 @@ export default function AddItemModal({
       >
         <h3 style={{ fontFamily: 'Fraunces', fontWeight: 400, fontSize: 24 }}>{title}</h3>
 
-        {!isAlt && (
+        {showStructuralFields && (
           <>
             <Field label="Item name">
               <input
@@ -215,11 +267,11 @@ export default function AddItemModal({
           </>
         )}
 
-        <Field label={isAlt ? 'Product' : 'Product (optional)'}>
+        <Field label={showStructuralFields ? 'Product (optional)' : 'Product'}>
           <input
             value={product}
             onChange={(e) => setProduct(e.target.value)}
-            required={isAlt}
+            required={!showStructuralFields}
             style={inputStyle}
           />
         </Field>
@@ -245,13 +297,35 @@ export default function AddItemModal({
 
         {error && <div style={{ color: 'var(--priority-before)', fontSize: 13 }}>{error}</div>}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
-          <button type="button" onClick={onClose} style={btnSecondaryStyle}>
-            Cancel
-          </button>
-          <button type="submit" disabled={submitting} style={btnPrimaryStyle}>
-            {submitting ? 'Saving…' : mode.kind === 'alternative-edit' ? 'Save changes' : 'Add'}
-          </button>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 10,
+            marginTop: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            {showResetButton && (
+              <button type="button" onClick={handleReset} disabled={submitting} style={btnResetStyle}>
+                Reset to default
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button type="button" onClick={onClose} style={btnSecondaryStyle}>
+              Cancel
+            </button>
+            <button type="submit" disabled={submitting} style={btnPrimaryStyle}>
+              {submitting
+                ? 'Saving…'
+                : mode.kind === 'alternative-edit' || mode.kind === 'catalog-edit'
+                  ? 'Save changes'
+                  : 'Add'}
+            </button>
+          </div>
         </div>
       </form>
     </div>
@@ -312,6 +386,20 @@ const btnSecondaryStyle: CSSProperties = {
   fontSize: 12,
   fontWeight: 600,
   letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+  cursor: 'pointer',
+}
+
+const btnResetStyle: CSSProperties = {
+  background: 'transparent',
+  color: 'var(--priority-before)',
+  border: '1px solid var(--priority-before)',
+  padding: '8px 14px',
+  borderRadius: 100,
+  fontFamily: 'Manrope',
+  fontSize: 11,
+  fontWeight: 600,
+  letterSpacing: '0.06em',
   textTransform: 'uppercase',
   cursor: 'pointer',
 }

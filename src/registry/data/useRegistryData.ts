@@ -16,6 +16,7 @@ import { supabase } from '../../lib/supabase'
 import type {
   Alternative,
   BabylistPerson,
+  CatalogTierOverride,
   CustomItem,
   ItemState,
   Pick,
@@ -23,17 +24,24 @@ import type {
 import {
   loadAlternatives,
   loadCatalog,
+  loadCatalogTierOverrides,
   loadCustomItems,
   loadItemStates,
   loadPeople,
   loadPicks,
+  mergeOverridesIntoCatalog,
   type ItemWithTiers,
 } from './queries'
 
 export interface RegistryData {
   loading: boolean
   error: string | null
+  /** Catalog with per-registry tier overrides already merged in. Each tier
+   *  carries `hasOverride: true` if it was customized for this registry. */
   catalog: ItemWithTiers[]
+  /** Raw override rows. Exposed for the modal's "Reset to default" path
+   *  and the import flow, which need to act on the canonical row directly. */
+  catalogTierOverrides: CatalogTierOverride[]
   people: BabylistPerson[]
   customItems: CustomItem[]
   alternatives: Alternative[]
@@ -42,11 +50,12 @@ export interface RegistryData {
   remotePickIds: Set<string>
   remoteCustomIds: Set<string>
   remoteAlternativeIds: Set<string>
-  /** Item IDs (catalog or custom) whose state just changed remotely; consumed
-   *  by ItemCard to play the highlight-ring animation on collapse/expand. */
   remoteStateChangeIds: Set<string>
+  /** Catalog tier IDs whose override just changed remotely — drives the
+   *  highlight-ring on the tier card the next render. */
+  remoteOverrideTierIds: Set<string>
   removingPickIds: Set<string>
-  clearRemoteFlag: (kind: 'pick' | 'custom' | 'alt' | 'state', id: string) => void
+  clearRemoteFlag: (kind: 'pick' | 'custom' | 'alt' | 'state' | 'override', id: string) => void
 }
 
 export function useRegistryData(
@@ -56,7 +65,8 @@ export function useRegistryData(
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const [catalog, setCatalog] = useState<ItemWithTiers[]>([])
+  const [rawCatalog, setRawCatalog] = useState<ItemWithTiers[]>([])
+  const [catalogTierOverrides, setCatalogTierOverrides] = useState<CatalogTierOverride[]>([])
   const [people, setPeople] = useState<BabylistPerson[]>([])
   const [customItems, setCustomItems] = useState<CustomItem[]>([])
   const [alternatives, setAlternatives] = useState<Alternative[]>([])
@@ -67,6 +77,7 @@ export function useRegistryData(
   const [remoteCustomIds, setRemoteCustomIds] = useState<Set<string>>(new Set())
   const [remoteAlternativeIds, setRemoteAlternativeIds] = useState<Set<string>>(new Set())
   const [remoteStateChangeIds, setRemoteStateChangeIds] = useState<Set<string>>(new Set())
+  const [remoteOverrideTierIds, setRemoteOverrideTierIds] = useState<Set<string>>(new Set())
   const [removingPickIds, setRemovingPickIds] = useState<Set<string>>(new Set())
 
   const personRef = useRef(currentPersonId)
@@ -75,11 +86,12 @@ export function useRegistryData(
   }, [currentPersonId])
 
   const clearRemoteFlag = useCallback(
-    (kind: 'pick' | 'custom' | 'alt' | 'state', id: string) => {
+    (kind: 'pick' | 'custom' | 'alt' | 'state' | 'override', id: string) => {
       if (kind === 'pick') setRemotePickIds((s) => { const n = new Set(s); n.delete(id); return n })
       if (kind === 'custom') setRemoteCustomIds((s) => { const n = new Set(s); n.delete(id); return n })
       if (kind === 'alt') setRemoteAlternativeIds((s) => { const n = new Set(s); n.delete(id); return n })
       if (kind === 'state') setRemoteStateChangeIds((s) => { const n = new Set(s); n.delete(id); return n })
+      if (kind === 'override') setRemoteOverrideTierIds((s) => { const n = new Set(s); n.delete(id); return n })
     },
     [],
   )
@@ -89,16 +101,18 @@ export function useRegistryData(
     let alive = true
     ;(async () => {
       try {
-        const [cat, ppl, customs, alts, pks, states] = await Promise.all([
+        const [cat, ppl, customs, alts, pks, states, overrides] = await Promise.all([
           loadCatalog(),
           loadPeople(registryId),
           loadCustomItems(registryId),
           loadAlternatives(registryId),
           loadPicks(registryId),
           loadItemStates(registryId),
+          loadCatalogTierOverrides(registryId),
         ])
         if (!alive) return
-        setCatalog(cat)
+        setRawCatalog(cat)
+        setCatalogTierOverrides(overrides)
         setPeople(ppl)
         setCustomItems(customs)
         setAlternatives(alts)
@@ -222,6 +236,39 @@ export function useRegistryData(
         {
           event: '*',
           schema: 'public',
+          table: 'babylist_catalog_tier_overrides',
+          filter: `registry_id=eq.${registryId}`,
+        },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as CatalogTierOverride
+          const isRemote =
+            (payload.new as CatalogTierOverride | null)?.updated_by !== personRef.current
+          if (payload.eventType === 'INSERT') {
+            const r = payload.new as CatalogTierOverride
+            setCatalogTierOverrides((prev) =>
+              prev.some((o) => o.id === r.id) ? prev : [...prev, r],
+            )
+            if (isRemote && r.catalog_tier_id)
+              setRemoteOverrideTierIds((s) => new Set(s).add(r.catalog_tier_id))
+          } else if (payload.eventType === 'UPDATE') {
+            const r = payload.new as CatalogTierOverride
+            setCatalogTierOverrides((prev) => prev.map((o) => (o.id === r.id ? r : o)))
+            if (isRemote && r.catalog_tier_id)
+              setRemoteOverrideTierIds((s) => new Set(s).add(r.catalog_tier_id))
+          } else if (payload.eventType === 'DELETE') {
+            const old = payload.old as CatalogTierOverride
+            setCatalogTierOverrides((prev) => prev.filter((o) => o.id !== old.id))
+            // Reset-to-default also animates so the user sees the revert.
+            if (row.catalog_tier_id)
+              setRemoteOverrideTierIds((s) => new Set(s).add(row.catalog_tier_id))
+          }
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
           table: 'babylist_item_states',
           filter: `registry_id=eq.${registryId}`,
         },
@@ -255,10 +302,15 @@ export function useRegistryData(
     }
   }, [registryId])
 
+  // Merge the per-registry overrides on top of the raw catalog so every
+  // downstream consumer sees a single, already-resolved view of each tier.
+  const catalog = mergeOverridesIntoCatalog(rawCatalog, catalogTierOverrides)
+
   return {
     loading,
     error,
     catalog,
+    catalogTierOverrides,
     people,
     customItems,
     alternatives,
@@ -268,6 +320,7 @@ export function useRegistryData(
     remoteCustomIds,
     remoteAlternativeIds,
     remoteStateChangeIds,
+    remoteOverrideTierIds,
     removingPickIds,
     clearRemoteFlag,
   }

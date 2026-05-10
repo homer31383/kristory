@@ -24,6 +24,26 @@ export interface CatalogTier {
   note: string | null
   url: string | null
   display_order: number | null
+  /**
+   * True when this tier has a per-registry override applied on top of the
+   * catalog default — used by the UI to show the "edited" dot. Populated by
+   * useRegistryData's merge step. Always false on raw fetches from
+   * babylist_catalog_tiers directly.
+   */
+  hasOverride?: boolean
+}
+
+export interface CatalogTierOverride {
+  id: string
+  registry_id: string
+  catalog_tier_id: string
+  product: string | null
+  price_str: string | null
+  unit_cost: number | null
+  note: string | null
+  url: string | null
+  updated_at: string
+  updated_by: string | null
 }
 
 export interface BabylistPerson {
