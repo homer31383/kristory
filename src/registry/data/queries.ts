@@ -18,6 +18,7 @@ import type {
   ItemState,
   ItemStateValue,
   Pick,
+  SectionState,
 } from '../types'
 
 export type ItemWithTiers = CatalogItem & {
@@ -276,6 +277,50 @@ export async function clearItemState(input: {
     .delete()
     .eq('registry_id', input.registryId)
     .eq(column, input.itemId)
+  if (error) throw error
+}
+
+// ─── Section collapse states ────────────────────────────────────────────────
+
+export async function loadSectionStates(registryId: string): Promise<SectionState[]> {
+  const { data, error } = await supabase
+    .from('babylist_section_states')
+    .select('*')
+    .eq('registry_id', registryId)
+  if (error) throw error
+  return data as SectionState[]
+}
+
+export async function upsertSectionState(input: {
+  registryId: string
+  section: string
+  collapsed: boolean
+  updatedBy: string | null
+}): Promise<void> {
+  const { error } = await supabase
+    .from('babylist_section_states')
+    .upsert(
+      {
+        registry_id: input.registryId,
+        section: input.section,
+        collapsed: input.collapsed,
+        updated_by: input.updatedBy,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'registry_id,section' },
+    )
+  if (error) throw error
+}
+
+export async function clearSectionState(input: {
+  registryId: string
+  section: string
+}): Promise<void> {
+  const { error } = await supabase
+    .from('babylist_section_states')
+    .delete()
+    .eq('registry_id', input.registryId)
+    .eq('section', input.section)
   if (error) throw error
 }
 

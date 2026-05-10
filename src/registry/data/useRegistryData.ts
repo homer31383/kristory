@@ -20,6 +20,7 @@ import type {
   CustomItem,
   ItemState,
   Pick,
+  SectionState,
 } from '../types'
 import {
   loadAlternatives,
@@ -29,6 +30,7 @@ import {
   loadItemStates,
   loadPeople,
   loadPicks,
+  loadSectionStates,
   mergeOverridesIntoCatalog,
   type ItemWithTiers,
 } from './queries'
@@ -47,6 +49,7 @@ export interface RegistryData {
   alternatives: Alternative[]
   picks: Pick[]
   itemStates: ItemState[]
+  sectionStates: SectionState[]
   remotePickIds: Set<string>
   remoteCustomIds: Set<string>
   remoteAlternativeIds: Set<string>
@@ -54,8 +57,14 @@ export interface RegistryData {
   /** Catalog tier IDs whose override just changed remotely — drives the
    *  highlight-ring on the tier card the next render. */
   remoteOverrideTierIds: Set<string>
+  /** Section names whose collapse state just changed remotely — drives the
+   *  brief header highlight when Krista collapses something on her side. */
+  remoteSectionChangeNames: Set<string>
   removingPickIds: Set<string>
-  clearRemoteFlag: (kind: 'pick' | 'custom' | 'alt' | 'state' | 'override', id: string) => void
+  clearRemoteFlag: (
+    kind: 'pick' | 'custom' | 'alt' | 'state' | 'override' | 'section',
+    id: string,
+  ) => void
 }
 
 export function useRegistryData(
@@ -72,12 +81,14 @@ export function useRegistryData(
   const [alternatives, setAlternatives] = useState<Alternative[]>([])
   const [picks, setPicks] = useState<Pick[]>([])
   const [itemStates, setItemStates] = useState<ItemState[]>([])
+  const [sectionStates, setSectionStates] = useState<SectionState[]>([])
 
   const [remotePickIds, setRemotePickIds] = useState<Set<string>>(new Set())
   const [remoteCustomIds, setRemoteCustomIds] = useState<Set<string>>(new Set())
   const [remoteAlternativeIds, setRemoteAlternativeIds] = useState<Set<string>>(new Set())
   const [remoteStateChangeIds, setRemoteStateChangeIds] = useState<Set<string>>(new Set())
   const [remoteOverrideTierIds, setRemoteOverrideTierIds] = useState<Set<string>>(new Set())
+  const [remoteSectionChangeNames, setRemoteSectionChangeNames] = useState<Set<string>>(new Set())
   const [removingPickIds, setRemovingPickIds] = useState<Set<string>>(new Set())
 
   const personRef = useRef(currentPersonId)
@@ -86,12 +97,16 @@ export function useRegistryData(
   }, [currentPersonId])
 
   const clearRemoteFlag = useCallback(
-    (kind: 'pick' | 'custom' | 'alt' | 'state' | 'override', id: string) => {
+    (
+      kind: 'pick' | 'custom' | 'alt' | 'state' | 'override' | 'section',
+      id: string,
+    ) => {
       if (kind === 'pick') setRemotePickIds((s) => { const n = new Set(s); n.delete(id); return n })
       if (kind === 'custom') setRemoteCustomIds((s) => { const n = new Set(s); n.delete(id); return n })
       if (kind === 'alt') setRemoteAlternativeIds((s) => { const n = new Set(s); n.delete(id); return n })
       if (kind === 'state') setRemoteStateChangeIds((s) => { const n = new Set(s); n.delete(id); return n })
       if (kind === 'override') setRemoteOverrideTierIds((s) => { const n = new Set(s); n.delete(id); return n })
+      if (kind === 'section') setRemoteSectionChangeNames((s) => { const n = new Set(s); n.delete(id); return n })
     },
     [],
   )
@@ -101,15 +116,17 @@ export function useRegistryData(
     let alive = true
     ;(async () => {
       try {
-        const [cat, ppl, customs, alts, pks, states, overrides] = await Promise.all([
-          loadCatalog(),
-          loadPeople(registryId),
-          loadCustomItems(registryId),
-          loadAlternatives(registryId),
-          loadPicks(registryId),
-          loadItemStates(registryId),
-          loadCatalogTierOverrides(registryId),
-        ])
+        const [cat, ppl, customs, alts, pks, states, overrides, sectionsState] =
+          await Promise.all([
+            loadCatalog(),
+            loadPeople(registryId),
+            loadCustomItems(registryId),
+            loadAlternatives(registryId),
+            loadPicks(registryId),
+            loadItemStates(registryId),
+            loadCatalogTierOverrides(registryId),
+            loadSectionStates(registryId),
+          ])
         if (!alive) return
         setRawCatalog(cat)
         setCatalogTierOverrides(overrides)
@@ -118,6 +135,7 @@ export function useRegistryData(
         setAlternatives(alts)
         setPicks(pks)
         setItemStates(states)
+        setSectionStates(sectionsState)
         setLoading(false)
       } catch (e) {
         if (!alive) return
@@ -207,6 +225,39 @@ export function useRegistryData(
           } else if (payload.eventType === 'DELETE') {
             const old = payload.old as Alternative
             setAlternatives((prev) => prev.filter((a) => a.id !== old.id))
+          }
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'babylist_section_states',
+          filter: `registry_id=eq.${registryId}`,
+        },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as SectionState
+          const isRemote =
+            (payload.new as SectionState | null)?.updated_by !== personRef.current
+          if (payload.eventType === 'INSERT') {
+            const r = payload.new as SectionState
+            setSectionStates((prev) => (prev.some((s) => s.id === r.id) ? prev : [...prev, r]))
+            if (isRemote && r.section)
+              setRemoteSectionChangeNames((s) => new Set(s).add(r.section))
+          } else if (payload.eventType === 'UPDATE') {
+            const r = payload.new as SectionState
+            setSectionStates((prev) => prev.map((s) => (s.id === r.id ? r : s)))
+            if (isRemote && r.section)
+              setRemoteSectionChangeNames((s) => new Set(s).add(r.section))
+          } else if (payload.eventType === 'DELETE') {
+            const old = payload.old as SectionState
+            setSectionStates((prev) => prev.filter((s) => s.id !== old.id))
+            // Even the local-origin "expand" triggers a brief flicker because
+            // we don't know the originator from payload.old reliably; that's
+            // OK — the highlight ring is subtle and only ~1s.
+            if (row.section)
+              setRemoteSectionChangeNames((s) => new Set(s).add(row.section))
           }
         },
       )
@@ -316,11 +367,13 @@ export function useRegistryData(
     alternatives,
     picks,
     itemStates,
+    sectionStates,
     remotePickIds,
     remoteCustomIds,
     remoteAlternativeIds,
     remoteStateChangeIds,
     remoteOverrideTierIds,
+    remoteSectionChangeNames,
     removingPickIds,
     clearRemoteFlag,
   }

@@ -114,3 +114,54 @@
 .registry-theme .card-expand-appear {
   animation: registry-card-expand-appear 240ms ease-out both;
 }
+
+/* ───────── Section collapse animation ─────────
+   Spec: 280ms ease-out bulk collapse. We give the expanded state a generous
+   max-height so even the densest categories (~30 items × ~600px each) fit
+   without clipping. */
+
+.registry-theme .section-content {
+  overflow: hidden;
+  transition: max-height 280ms ease-out, opacity 200ms ease-out;
+}
+.registry-theme .section-content.expanded {
+  max-height: 50000px;
+  opacity: 1;
+}
+.registry-theme .section-content.collapsed {
+  max-height: 0;
+  opacity: 0;
+}
+
+/* Chevron rotation on collapse */
+.registry-theme .section-chevron {
+  transition: transform 200ms ease-out;
+  display: inline-block;
+}
+.registry-theme .section-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+/* ───────── Jump menu panel ─────────
+   Shared mobile/desktop: fixed bottom-left, anchored above the jump FAB.
+   Slides up on open. The panel itself has its own scroll for long lists. */
+
+@keyframes registry-jump-menu-slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.registry-theme .jump-menu-panel {
+  position: fixed;
+  bottom: calc(var(--registry-fab-offset, 80px) + 64px);
+  left: 24px;
+  z-index: 70;
+  width: 320px;
+  max-width: calc(100vw - 48px);
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--cream);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px -12px rgba(29, 36, 51, 0.35);
+  animation: registry-jump-menu-slide-up 200ms ease-out both;
+}

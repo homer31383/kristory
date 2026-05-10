@@ -28,6 +28,7 @@ import {
   addCustomItem,
   addPick,
   clearItemState,
+  clearSectionState,
   deleteAlternative,
   deleteCatalogTierOverride,
   deleteCustomItem,
@@ -36,11 +37,19 @@ import {
   updatePickQty,
   upsertCatalogTierOverride,
   upsertItemState,
+  upsertSectionState,
 } from '../registry/data/queries'
 import type { ItemStateValue, Pick } from '../registry/types'
 import { buildCsv, downloadCsv, parseCsv, summarizeImport, todayStamp } from '../registry/lib/csv'
 import { importCsv } from '../registry/lib/import'
+import CategoryJumpMenu from '../registry/components/CategoryJumpMenu'
+import type { SectionEntry } from '../registry/components/CategoryJumpMenu'
 import { useUser } from '../hooks/useUser'
+
+/** DOM id helper for scroll-into-view from the jump menu. */
+function sectionDomId(name: string): string {
+  return 'registry-section-' + name.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()
+}
 
 export default function Registry() {
   const { user } = useUser()
@@ -52,6 +61,7 @@ export default function Registry() {
     where: new Set<string>(),
     myPicksOnly: false,
     hideMuted: false,
+    showOnlySaved: false,
   })
   const [modal, setModal] = useState<AddItemMode | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -91,6 +101,7 @@ export default function Registry() {
     return allItems.filter((di) => {
       const item = di.item
       const state = stateByItem.get(item.id) ?? 'active'
+      if (filters.showOnlySaved && state !== 'saved') return false
       if (filters.hideMuted && state === 'muted') return false
       if (filters.priority.size > 0 && !filters.priority.has(item.priority ?? '')) return false
       if (filters.where.size > 0 && !filters.where.has(item.where_to_buy ?? '')) return false
@@ -101,6 +112,25 @@ export default function Registry() {
     })
   }, [allItems, filters, data.picks, data.alternatives, personId, stateByItem])
 
+  /**
+   * Section order from the catalog's natural ordering — preserved even when a
+   * filter would otherwise hide every item in the section. We render an empty
+   * header with a "0 visible" indicator in that case so the user knows the
+   * category still exists.
+   */
+  const sectionsInOrder = useMemo(() => {
+    const seen = new Set<string>()
+    const ordered: string[] = []
+    for (const di of allItems) {
+      const s = di.item.section
+      if (!seen.has(s)) {
+        seen.add(s)
+        ordered.push(s)
+      }
+    }
+    return ordered
+  }, [allItems])
+
   const grouped = useMemo(() => {
     const g = new Map<string, DisplayItem[]>()
     for (const di of filtered) {
@@ -110,6 +140,29 @@ export default function Registry() {
     }
     return g
   }, [filtered])
+
+  /** Per-section unfiltered totals + picked-by-me count, used for header
+   *  counts and the jump menu. */
+  const sectionTotals = useMemo(() => {
+    const m = new Map<string, { total: number; picked: number }>()
+    for (const di of allItems) {
+      const sec = di.item.section
+      if (!m.has(sec)) m.set(sec, { total: 0, picked: 0 })
+      const entry = m.get(sec)!
+      entry.total++
+      if (anyPickForItem(di, data.picks, personId, data.alternatives)) entry.picked++
+    }
+    return m
+  }, [allItems, data.picks, data.alternatives, personId])
+
+  /** Collapsed-state lookup. A section without a row is expanded. */
+  const collapsedSections = useMemo(() => {
+    const s = new Set<string>()
+    for (const r of data.sectionStates) {
+      if (r.collapsed) s.add(r.section)
+    }
+    return s
+  }, [data.sectionStates])
 
   const flatTiers = useMemo(() => data.catalog.flatMap((it) => it.tiers), [data.catalog])
   const tierMap = useMemo(() => new Map(flatTiers.map((t) => [t.id, t])), [flatTiers])
@@ -338,6 +391,78 @@ export default function Registry() {
     await deleteCatalogTierOverride({ registryId: REGISTRY_ID, catalogTierId })
   }
 
+  async function setSectionCollapsedState(section: string, collapsed: boolean) {
+    try {
+      if (collapsed) {
+        await upsertSectionState({
+          registryId: REGISTRY_ID,
+          section,
+          collapsed: true,
+          updatedBy: personId,
+        })
+      } else {
+        // Back-to-expanded = delete the row (matches babylist_item_states).
+        await clearSectionState({ registryId: REGISTRY_ID, section })
+      }
+    } catch (e) {
+      setToast(`Couldn't update section: ${e instanceof Error ? e.message : String(e)}`)
+      setTimeout(() => setToast(null), 6000)
+    }
+  }
+
+  async function handleToggleSection(section: string) {
+    const isCollapsed = collapsedSections.has(section)
+    await setSectionCollapsedState(section, !isCollapsed)
+  }
+
+  async function handleCollapseAll() {
+    for (const s of sectionsInOrder) {
+      if (!collapsedSections.has(s)) {
+        // Fire and forget; realtime will deliver each one. Awaiting in sequence
+        // means the UI updates progressively rather than waiting for the slowest.
+        void setSectionCollapsedState(s, true)
+      }
+    }
+  }
+
+  async function handleExpandAll() {
+    for (const s of sectionsInOrder) {
+      if (collapsedSections.has(s)) {
+        void setSectionCollapsedState(s, false)
+      }
+    }
+  }
+
+  function handleJumpToSection(section: string) {
+    // Auto-expand if collapsed (the user is clearly trying to see it).
+    if (collapsedSections.has(section)) {
+      void setSectionCollapsedState(section, false)
+    }
+    // Scroll the section header into view. Defer one tick so the expansion
+    // animation has a chance to start; scrollIntoView still anchors to the
+    // section header element, which is positionally stable regardless of
+    // whether content below is shown.
+    const el = document.getElementById(sectionDomId(section))
+    if (el) {
+      requestAnimationFrame(() => {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+    }
+  }
+
+  /** Build the jump menu's section list with current counts. */
+  const jumpMenuSections: SectionEntry[] = sectionsInOrder.map((name) => {
+    const totals = sectionTotals.get(name) ?? { total: 0, picked: 0 }
+    const visible = grouped.get(name)?.length ?? 0
+    return {
+      name,
+      total: totals.total,
+      visible,
+      picked: totals.picked,
+      collapsed: collapsedSections.has(name),
+    }
+  })
+
   async function handleDeleteCustom(id: string) {
     if (!confirm('Delete this custom item? This will remove all picks attached to it.')) return
     await deleteCustomItem(id)
@@ -351,16 +476,23 @@ export default function Registry() {
   async function handleChangeItemState(di: DisplayItem, next: ItemStateValue) {
     const itemKind = di.kind
     const itemId = di.item.id
-    if (next === 'active') {
-      await clearItemState({ registryId: REGISTRY_ID, itemKind, itemId })
-    } else {
-      await upsertItemState({
-        registryId: REGISTRY_ID,
-        itemKind,
-        itemId,
-        state: next,
-        updatedBy: personId,
-      })
+    try {
+      if (next === 'active') {
+        await clearItemState({ registryId: REGISTRY_ID, itemKind, itemId })
+      } else {
+        await upsertItemState({
+          registryId: REGISTRY_ID,
+          itemKind,
+          itemId,
+          state: next,
+          updatedBy: personId,
+        })
+      }
+    } catch (e) {
+      // Surface DB failures rather than swallowing them — silent rejections
+      // here were the root of bug 1 (partial-index ON CONFLICT mismatch).
+      setToast(`Couldn't change state: ${e instanceof Error ? e.message : String(e)}`)
+      setTimeout(() => setToast(null), 6000)
     }
   }
 
@@ -409,8 +541,6 @@ export default function Registry() {
     }
   }
 
-  let sectionIdx = 0
-
   return (
     <div className="registry-theme" style={{ minHeight: '100vh' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 32px 220px' }}>
@@ -426,56 +556,25 @@ export default function Registry() {
         <FilterBar filters={filters} setFilters={setFilters} />
 
         <main>
-          {Array.from(grouped.entries()).map(([section, items]) => {
-            sectionIdx++
+          {sectionsInOrder.map((section, i) => {
+            const items = grouped.get(section) ?? []
+            const totalsForSec = sectionTotals.get(section) ?? { total: 0, picked: 0 }
+            const isCollapsed = collapsedSections.has(section)
+            const isRemoteSectionChange = data.remoteSectionChangeNames.has(section)
+
             return (
-              <section key={section} style={{ marginTop: 48, marginBottom: 24 }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'baseline',
-                    gap: 16,
-                    paddingBottom: 12,
-                    borderBottom: '1px solid var(--ink)',
-                    marginBottom: 32,
-                  }}
-                >
-                  <span
-                    style={{
-                      fontFamily: 'Fraunces',
-                      fontWeight: 300,
-                      fontStyle: 'italic',
-                      fontSize: 18,
-                      color: 'var(--terracotta)',
-                    }}
-                  >
-                    {String(sectionIdx).padStart(2, '0')}
-                  </span>
-                  <h2
-                    style={{
-                      fontFamily: 'Fraunces',
-                      fontWeight: 400,
-                      fontSize: 32,
-                      letterSpacing: '-0.01em',
-                      color: 'var(--ink)',
-                      flex: 1,
-                    }}
-                  >
-                    {section}
-                  </h2>
-                  <span
-                    style={{
-                      fontSize: 12,
-                      color: 'var(--ink-faint)',
-                      fontFamily: 'Manrope',
-                      fontWeight: 500,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    {items.length} {items.length === 1 ? 'item' : 'items'}
-                  </span>
-                </div>
+              <SectionBlock
+                key={section}
+                section={section}
+                idx={i + 1}
+                visible={items.length}
+                total={totalsForSec.total}
+                picked={totalsForSec.picked}
+                collapsed={isCollapsed}
+                isRemoteSectionChange={isRemoteSectionChange}
+                onToggleCollapsed={() => handleToggleSection(section)}
+                onAnimationEndHeader={() => data.clearRemoteFlag('section', section)}
+              >
                 {items.map((di) => {
                   const id = di.item.id
                   return (
@@ -527,13 +626,13 @@ export default function Registry() {
                     />
                   )
                 })}
-              </section>
+              </SectionBlock>
             )
           })}
-          {grouped.size === 0 && (
+          {sectionsInOrder.length > 0 && grouped.size === 0 && (
             <div
               style={{
-                padding: '80px 0',
+                padding: '40px 0',
                 textAlign: 'center',
                 color: 'var(--ink-faint)',
                 fontFamily: 'Fraunces',
@@ -545,6 +644,13 @@ export default function Registry() {
           )}
         </main>
       </div>
+
+      <CategoryJumpMenu
+        sections={jumpMenuSections}
+        onJump={handleJumpToSection}
+        onCollapseAll={handleCollapseAll}
+        onExpandAll={handleExpandAll}
+      />
 
       <FloatingBar
         pickCount={myPickCount}
@@ -596,6 +702,158 @@ export default function Registry() {
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * One section block — collapsible header + content. Kept as its own component
+ * so the `useEffect` that drives the remote-change highlight on the header
+ * lives in a stable place.
+ */
+function SectionBlock({
+  section,
+  idx,
+  visible,
+  total,
+  picked,
+  collapsed,
+  isRemoteSectionChange,
+  onToggleCollapsed,
+  onAnimationEndHeader,
+  children,
+}: {
+  section: string
+  idx: number
+  visible: number
+  total: number
+  picked: number
+  collapsed: boolean
+  isRemoteSectionChange: boolean
+  onToggleCollapsed: () => void
+  onAnimationEndHeader: () => void
+  children: React.ReactNode
+}) {
+  const filterReducesVisible = visible < total
+  const zeroVisible = visible === 0
+
+  const countText = zeroVisible
+    ? '0 visible'
+    : filterReducesVisible
+      ? `${visible} of ${total} visible`
+      : `${total} ${total === 1 ? 'item' : 'items'}`
+
+  return (
+    <section
+      id={sectionDomId(section)}
+      style={{ marginTop: 56, marginBottom: 24, scrollMarginTop: 16 }}
+    >
+      <div
+        className={isRemoteSectionChange ? 'card-remote-in' : ''}
+        onAnimationEnd={() => {
+          if (isRemoteSectionChange) onAnimationEndHeader()
+        }}
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 16,
+          paddingBottom: 12,
+          borderBottom: collapsed ? '1px dashed var(--line)' : '1px solid var(--ink)',
+          marginBottom: collapsed ? 0 : 32,
+        }}
+      >
+        <button
+          onClick={onToggleCollapsed}
+          aria-label={collapsed ? 'Expand section' : 'Collapse section'}
+          title={collapsed ? 'Expand section' : 'Collapse section'}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            padding: '4px 6px',
+            cursor: 'pointer',
+            color: 'var(--ink-soft)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            marginLeft: -6,
+          }}
+        >
+          <span className={collapsed ? 'section-chevron collapsed' : 'section-chevron'}>
+            <Chevron />
+          </span>
+        </button>
+
+        <span
+          style={{
+            fontFamily: 'Fraunces',
+            fontWeight: 300,
+            fontStyle: 'italic',
+            fontSize: 18,
+            color: 'var(--terracotta)',
+          }}
+        >
+          {String(idx).padStart(2, '0')}
+        </span>
+
+        <h2
+          onClick={onToggleCollapsed}
+          style={{
+            fontFamily: 'Fraunces',
+            fontWeight: 400,
+            fontSize: 32,
+            letterSpacing: '-0.01em',
+            color: collapsed ? 'var(--ink-soft)' : 'var(--ink)',
+            flex: 1,
+            cursor: 'pointer',
+            margin: 0,
+          }}
+        >
+          {section}
+        </h2>
+
+        <span
+          style={{
+            fontSize: 12,
+            color: zeroVisible ? 'var(--ink-faint)' : 'var(--ink-soft)',
+            fontFamily: 'Manrope',
+            fontWeight: 500,
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+            fontStyle: zeroVisible ? 'italic' : 'normal',
+          }}
+        >
+          {countText}
+          {picked > 0 && (
+            <span style={{ marginLeft: 8, color: 'var(--terracotta)' }}>
+              · {picked} picked
+            </span>
+          )}
+        </span>
+      </div>
+
+      <div
+        className={collapsed ? 'section-content collapsed' : 'section-content expanded'}
+        aria-hidden={collapsed}
+      >
+        <div style={{ paddingTop: collapsed ? 0 : 0 }}>{children}</div>
+      </div>
+    </section>
+  )
+}
+
+function Chevron() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
   )
 }
 

@@ -46,6 +46,15 @@ export interface CatalogTierOverride {
   updated_by: string | null
 }
 
+export interface SectionState {
+  id: string
+  registry_id: string
+  section: string
+  collapsed: boolean
+  updated_at: string
+  updated_by: string | null
+}
+
 export interface BabylistPerson {
   id: string
   registry_id: string
