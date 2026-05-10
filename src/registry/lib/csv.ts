@@ -12,6 +12,8 @@ import type {
   CatalogItem,
   CatalogTier,
   CustomItem,
+  ItemState,
+  ItemStateValue,
   Pick,
 } from '../types'
 
@@ -21,6 +23,7 @@ export interface ParsedCsvRow {
   item: string
   priority: string
   where: string
+  state: ItemStateValue
   qty: number
   tier: string
   product: string
@@ -45,12 +48,16 @@ function normalizeRow(r: Record<string, string>): ParsedCsvRow {
     }
     return ''
   }
+  const rawState = get('State').toLowerCase()
+  const state: ItemStateValue =
+    rawState === 'muted' || rawState === 'saved' ? rawState : 'active'
   return {
     person: get('Person'),
     section: get('Section'),
     item: get('Item'),
     priority: get('Priority'),
     where: get('Where'),
+    state,
     qty: parseInt(get('Qty') || '1', 10) || 1,
     tier: get('Tier'),
     product: get('Product'),
@@ -70,6 +77,7 @@ export interface ExportContext {
   alternatives: Alternative[]
   people: BabylistPerson[]
   picks: Pick[]
+  itemStates: ItemState[]
 }
 
 export function buildCsv(ctx: ExportContext): string {
@@ -79,6 +87,7 @@ export function buildCsv(ctx: ExportContext): string {
     'Item',
     'Priority',
     'Where',
+    'State',
     'Qty',
     'Tier',
     'Product',
@@ -92,6 +101,14 @@ export function buildCsv(ctx: ExportContext): string {
   const customMap = new Map(ctx.customItems.map((c) => [c.id, c]))
   const altMap = new Map(ctx.alternatives.map((a) => [a.id, a]))
   const personMap = new Map(ctx.people.map((p) => [p.id, p]))
+
+  const stateByItem = new Map<string, ItemStateValue>()
+  for (const s of ctx.itemStates) {
+    const key = s.catalog_item_id ?? s.custom_item_id
+    if (key) stateByItem.set(key, s.state)
+  }
+  const resolveState = (parentItemId: string | null): ItemStateValue =>
+    parentItemId ? stateByItem.get(parentItemId) ?? 'active' : 'active'
 
   const rows: (string | number | null)[][] = []
 
@@ -108,6 +125,7 @@ export function buildCsv(ctx: ExportContext): string {
     let note = ''
     let url = ''
     let unitCost: number | null = null
+    let parentItemId: string | null = null
 
     if (pick.catalog_tier_id) {
       const t = tierMap.get(pick.catalog_tier_id)
@@ -124,6 +142,7 @@ export function buildCsv(ctx: ExportContext): string {
       note = t.note ?? ''
       url = t.url ?? ''
       unitCost = t.unit_cost
+      parentItemId = it.id
     } else if (pick.custom_item_id) {
       const c = customMap.get(pick.custom_item_id)
       if (!c) continue
@@ -137,6 +156,7 @@ export function buildCsv(ctx: ExportContext): string {
       note = c.note ?? ''
       url = c.url ?? ''
       unitCost = c.unit_cost
+      parentItemId = c.id
     } else if (pick.alternative_id) {
       const a = altMap.get(pick.alternative_id)
       if (!a) continue
@@ -153,6 +173,7 @@ export function buildCsv(ctx: ExportContext): string {
           item = it.item_name
           priority = it.priority ?? ''
           where = it.where_to_buy ?? ''
+          parentItemId = it.id
         }
       } else if (a.custom_item_id) {
         const c = customMap.get(a.custom_item_id)
@@ -161,6 +182,7 @@ export function buildCsv(ctx: ExportContext): string {
           item = c.item_name
           priority = c.priority ?? ''
           where = c.where_to_buy ?? ''
+          parentItemId = c.id
         }
       }
     }
@@ -172,6 +194,7 @@ export function buildCsv(ctx: ExportContext): string {
       item,
       priority,
       where,
+      resolveState(parentItemId),
       pick.qty,
       tier,
       product,

@@ -76,3 +76,15 @@ export interface Pick {
   qty: number
   picked_at: string
 }
+
+export type ItemStateValue = 'active' | 'muted' | 'saved'
+
+export interface ItemState {
+  id: string
+  registry_id: string
+  catalog_item_id: string | null
+  custom_item_id: string | null
+  state: ItemStateValue
+  updated_at: string
+  updated_by: string | null
+}

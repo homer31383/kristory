@@ -14,6 +14,8 @@ import type {
   CatalogItem,
   CatalogTier,
   CustomItem,
+  ItemState,
+  ItemStateValue,
   Pick,
 } from '../types'
 
@@ -114,6 +116,75 @@ export async function loadPicks(registryId: string): Promise<Pick[]> {
     .eq('registry_id', registryId)
   if (error) throw error
   return data as Pick[]
+}
+
+export async function loadItemStates(registryId: string): Promise<ItemState[]> {
+  const { data, error } = await supabase
+    .from('babylist_item_states')
+    .select('*')
+    .eq('registry_id', registryId)
+  if (error) throw error
+  return data as ItemState[]
+}
+
+/**
+ * Upsert the state for an item.
+ *
+ * We have two unique constraints — (registry_id, catalog_item_id) and
+ * (registry_id, custom_item_id) — so the `onConflict` clause depends on
+ * which side the item lives on. Callers pass the item kind explicitly.
+ */
+export async function upsertItemState(input: {
+  registryId: string
+  itemKind: 'catalog' | 'custom'
+  itemId: string
+  state: Exclude<ItemStateValue, 'active'>
+  updatedBy: string | null
+}): Promise<void> {
+  const row =
+    input.itemKind === 'catalog'
+      ? {
+          registry_id: input.registryId,
+          catalog_item_id: input.itemId,
+          custom_item_id: null,
+          state: input.state,
+          updated_by: input.updatedBy,
+          updated_at: new Date().toISOString(),
+        }
+      : {
+          registry_id: input.registryId,
+          catalog_item_id: null,
+          custom_item_id: input.itemId,
+          state: input.state,
+          updated_by: input.updatedBy,
+          updated_at: new Date().toISOString(),
+        }
+  const onConflict =
+    input.itemKind === 'catalog'
+      ? 'registry_id,catalog_item_id'
+      : 'registry_id,custom_item_id'
+  const { error } = await supabase
+    .from('babylist_item_states')
+    .upsert(row, { onConflict })
+  if (error) throw error
+}
+
+/**
+ * "Back to active" path. Spec: simpler to just delete the row than store
+ * 'active' explicitly.
+ */
+export async function clearItemState(input: {
+  registryId: string
+  itemKind: 'catalog' | 'custom'
+  itemId: string
+}): Promise<void> {
+  const column = input.itemKind === 'catalog' ? 'catalog_item_id' : 'custom_item_id'
+  const { error } = await supabase
+    .from('babylist_item_states')
+    .delete()
+    .eq('registry_id', input.registryId)
+    .eq(column, input.itemId)
+  if (error) throw error
 }
 
 // ─── Mutations ─────────────────────────────────────────────────────────────

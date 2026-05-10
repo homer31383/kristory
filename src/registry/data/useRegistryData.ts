@@ -17,12 +17,14 @@ import type {
   Alternative,
   BabylistPerson,
   CustomItem,
+  ItemState,
   Pick,
 } from '../types'
 import {
   loadAlternatives,
   loadCatalog,
   loadCustomItems,
+  loadItemStates,
   loadPeople,
   loadPicks,
   type ItemWithTiers,
@@ -36,11 +38,15 @@ export interface RegistryData {
   customItems: CustomItem[]
   alternatives: Alternative[]
   picks: Pick[]
+  itemStates: ItemState[]
   remotePickIds: Set<string>
   remoteCustomIds: Set<string>
   remoteAlternativeIds: Set<string>
+  /** Item IDs (catalog or custom) whose state just changed remotely; consumed
+   *  by ItemCard to play the highlight-ring animation on collapse/expand. */
+  remoteStateChangeIds: Set<string>
   removingPickIds: Set<string>
-  clearRemoteFlag: (kind: 'pick' | 'custom' | 'alt', id: string) => void
+  clearRemoteFlag: (kind: 'pick' | 'custom' | 'alt' | 'state', id: string) => void
 }
 
 export function useRegistryData(
@@ -55,10 +61,12 @@ export function useRegistryData(
   const [customItems, setCustomItems] = useState<CustomItem[]>([])
   const [alternatives, setAlternatives] = useState<Alternative[]>([])
   const [picks, setPicks] = useState<Pick[]>([])
+  const [itemStates, setItemStates] = useState<ItemState[]>([])
 
   const [remotePickIds, setRemotePickIds] = useState<Set<string>>(new Set())
   const [remoteCustomIds, setRemoteCustomIds] = useState<Set<string>>(new Set())
   const [remoteAlternativeIds, setRemoteAlternativeIds] = useState<Set<string>>(new Set())
+  const [remoteStateChangeIds, setRemoteStateChangeIds] = useState<Set<string>>(new Set())
   const [removingPickIds, setRemovingPickIds] = useState<Set<string>>(new Set())
 
   const personRef = useRef(currentPersonId)
@@ -66,23 +74,28 @@ export function useRegistryData(
     personRef.current = currentPersonId
   }, [currentPersonId])
 
-  const clearRemoteFlag = useCallback((kind: 'pick' | 'custom' | 'alt', id: string) => {
-    if (kind === 'pick') setRemotePickIds((s) => { const n = new Set(s); n.delete(id); return n })
-    if (kind === 'custom') setRemoteCustomIds((s) => { const n = new Set(s); n.delete(id); return n })
-    if (kind === 'alt') setRemoteAlternativeIds((s) => { const n = new Set(s); n.delete(id); return n })
-  }, [])
+  const clearRemoteFlag = useCallback(
+    (kind: 'pick' | 'custom' | 'alt' | 'state', id: string) => {
+      if (kind === 'pick') setRemotePickIds((s) => { const n = new Set(s); n.delete(id); return n })
+      if (kind === 'custom') setRemoteCustomIds((s) => { const n = new Set(s); n.delete(id); return n })
+      if (kind === 'alt') setRemoteAlternativeIds((s) => { const n = new Set(s); n.delete(id); return n })
+      if (kind === 'state') setRemoteStateChangeIds((s) => { const n = new Set(s); n.delete(id); return n })
+    },
+    [],
+  )
 
   // ─── Initial load ────────────────────────────────────────────────────────
   useEffect(() => {
     let alive = true
     ;(async () => {
       try {
-        const [cat, ppl, customs, alts, pks] = await Promise.all([
+        const [cat, ppl, customs, alts, pks, states] = await Promise.all([
           loadCatalog(),
           loadPeople(registryId),
           loadCustomItems(registryId),
           loadAlternatives(registryId),
           loadPicks(registryId),
+          loadItemStates(registryId),
         ])
         if (!alive) return
         setCatalog(cat)
@@ -90,6 +103,7 @@ export function useRegistryData(
         setCustomItems(customs)
         setAlternatives(alts)
         setPicks(pks)
+        setItemStates(states)
         setLoading(false)
       } catch (e) {
         if (!alive) return
@@ -203,6 +217,37 @@ export function useRegistryData(
           }
         },
       )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'babylist_item_states',
+          filter: `registry_id=eq.${registryId}`,
+        },
+        (payload) => {
+          // Animate any remote-origin change. We can't tell who made the change
+          // from updated_by alone reliably (it may be null), so we compare the
+          // new updated_by against the current person.
+          const recordForFlag = (payload.new ?? payload.old) as ItemState
+          const itemId = recordForFlag.catalog_item_id ?? recordForFlag.custom_item_id
+          const isRemote =
+            (payload.new as ItemState | null)?.updated_by !== personRef.current
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new as ItemState
+            setItemStates((prev) => (prev.some((s) => s.id === row.id) ? prev : [...prev, row]))
+            if (isRemote && itemId) setRemoteStateChangeIds((s) => new Set(s).add(itemId))
+          } else if (payload.eventType === 'UPDATE') {
+            const row = payload.new as ItemState
+            setItemStates((prev) => prev.map((s) => (s.id === row.id ? row : s)))
+            if (isRemote && itemId) setRemoteStateChangeIds((s) => new Set(s).add(itemId))
+          } else if (payload.eventType === 'DELETE') {
+            const old = payload.old as ItemState
+            setItemStates((prev) => prev.filter((s) => s.id !== old.id))
+            if (itemId) setRemoteStateChangeIds((s) => new Set(s).add(itemId))
+          }
+        },
+      )
       .subscribe()
 
     return () => {
@@ -218,9 +263,11 @@ export function useRegistryData(
     customItems,
     alternatives,
     picks,
+    itemStates,
     remotePickIds,
     remoteCustomIds,
     remoteAlternativeIds,
+    remoteStateChangeIds,
     removingPickIds,
     clearRemoteFlag,
   }

@@ -5,6 +5,7 @@ import type {
   BabylistPerson,
   CatalogTier,
   CustomItem,
+  ItemStateValue,
   Pick,
 } from '../types'
 import type { ItemWithTiers } from '../data/queries'
@@ -22,11 +23,15 @@ interface Props {
   picks: Pick[]
   people: BabylistPerson[]
   myPersonId: string | null
+  /** Current state of THIS item (muted / saved / active). */
+  itemState: ItemStateValue
+  /** True if the most recent state change came from the other person. */
+  isRemoteStateChange: boolean
   remotePickIds: Set<string>
   removingPickIds: Set<string>
   remoteAlternativeIds: Set<string>
   remoteCustomIds: Set<string>
-  clearRemote: (kind: 'pick' | 'custom' | 'alt', id: string) => void
+  clearRemote: (kind: 'pick' | 'custom' | 'alt' | 'state', id: string) => void
   onAddAlternative: (target: {
     catalogItemId: string | null
     customItemId: string | null
@@ -38,6 +43,7 @@ interface Props {
   onTogglePickCustom: (customItemId: string) => void
   onTogglePickAlternative: (altId: string) => void
   onChangePickQty: (pickId: string, qty: number) => void
+  onChangeItemState: (next: ItemStateValue) => void
   onDeleteCustom?: () => void
 }
 
@@ -48,6 +54,8 @@ export default function ItemCard(props: Props) {
     picks,
     people,
     myPersonId,
+    itemState,
+    isRemoteStateChange,
     remotePickIds,
     removingPickIds,
     remoteAlternativeIds,
@@ -60,6 +68,7 @@ export default function ItemCard(props: Props) {
     onTogglePickCustom,
     onTogglePickAlternative,
     onChangePickQty,
+    onChangeItemState,
     onDeleteCustom,
   } = props
 
@@ -68,21 +77,49 @@ export default function ItemCard(props: Props) {
   const priority = display.item.priority
   const where = display.item.where_to_buy
   const defaultQty = display.item.suggested_qty ?? 1
+  const isCollapsedState = itemState === 'muted' || itemState === 'saved'
 
+  /**
+   * Local-only "expand back from slim row" toggle. The DB state stays muted/
+   * saved; this just unfolds the card for review without changing intent.
+   */
+  const [locallyExpanded, setLocallyExpanded] = useState(false)
+  const showSlim = isCollapsedState && !locallyExpanded
+
+  // Animation ref — fires when the new layout first appears.
+  const rowRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!isRemoteStateChange) return
+    const el = rowRef.current
+    if (!el) return
+    const handler = () => clearRemote('state', itemId)
+    el.addEventListener('animationend', handler, { once: true })
+    return () => el.removeEventListener('animationend', handler)
+  }, [isRemoteStateChange, itemId, clearRemote])
+
+  // Remote custom-item appear animation (existing behavior).
+  const isRemoteCustom = display.kind === 'custom' && remoteCustomIds.has(itemId)
+
+  // ─── Slim row (muted / saved, not expanded) ────────────────────────────
+  if (showSlim) {
+    return (
+      <SlimRow
+        itemName={itemName}
+        priority={priority}
+        where={where}
+        itemState={itemState}
+        isRemoteStateChange={isRemoteStateChange}
+        rowRef={rowRef}
+        onExpand={() => setLocallyExpanded(true)}
+        onChangeItemState={onChangeItemState}
+      />
+    )
+  }
+
+  // ─── Full card ─────────────────────────────────────────────────────────
   const myAlts = alternatives.filter((a) =>
     display.kind === 'catalog' ? a.catalog_item_id === itemId : a.custom_item_id === itemId,
   )
-
-  const isRemoteCustom = display.kind === 'custom' && remoteCustomIds.has(itemId)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!isRemoteCustom) return
-    const el = ref.current
-    if (!el) return
-    const handler = () => clearRemote('custom', itemId)
-    el.addEventListener('animationend', handler, { once: true })
-    return () => el.removeEventListener('animationend', handler)
-  }, [isRemoteCustom, itemId, clearRemote])
 
   const tierDisplays: { display: DisplayTier; tierKey: string; isRemoteIn: boolean }[] = []
 
@@ -164,16 +201,71 @@ export default function ItemCard(props: Props) {
     'Nice to have': 'var(--priority-nice)',
   }
 
+  // The full-card branch reuses the existing remote-card-appear animation
+  // when (a) the custom item just appeared remotely OR (b) the state just
+  // flipped back to active remotely (so the slim row gave way to a card).
+  const cardAnimationCls =
+    isRemoteCustom || (isRemoteStateChange && itemState === 'active')
+      ? 'card-remote-in'
+      : locallyExpanded
+        ? 'card-expand-appear'
+        : ''
+
   return (
     <div
-      ref={ref}
-      className={isRemoteCustom ? 'card-remote-in' : ''}
+      ref={rowRef}
+      className={cardAnimationCls}
       style={{
         marginBottom: 48,
         paddingBottom: 48,
         borderBottom: '1px dashed var(--line-faint)',
       }}
     >
+      {/* "Currently muted/saved" banner shown only when the user has locally
+          expanded a collapsed item — a reminder + one-click recollapse. */}
+      {isCollapsedState && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            padding: '8px 12px',
+            marginBottom: 16,
+            background:
+              itemState === 'muted'
+                ? 'rgba(141, 150, 168, 0.12)'
+                : 'rgba(106, 122, 79, 0.12)',
+            border: `1px dashed ${itemState === 'muted' ? 'var(--ink-faint)' : 'var(--moss)'}`,
+            borderRadius: 6,
+            fontFamily: 'Manrope',
+            fontSize: 12,
+            color: itemState === 'muted' ? 'var(--ink-soft)' : 'var(--moss)',
+          }}
+        >
+          <span>
+            {itemState === 'muted'
+              ? 'This item is muted and not counted in totals.'
+              : 'This item is saved for later — still counted in totals.'}
+          </span>
+          <button
+            onClick={() => setLocallyExpanded(false)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'inherit',
+              textDecoration: 'underline',
+              cursor: 'pointer',
+              fontFamily: 'Manrope',
+              fontSize: 12,
+              padding: 0,
+            }}
+          >
+            Collapse
+          </button>
+        </div>
+      )}
+
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
         {priority && (
           <span
@@ -257,6 +349,19 @@ export default function ItemCard(props: Props) {
         >
           ↗ Search best
         </button>
+        <OverflowMenu
+          items={[
+            ...(itemState === 'muted'
+              ? []
+              : [{ label: 'Mute', onClick: () => onChangeItemState('muted') }]),
+            ...(itemState === 'saved'
+              ? []
+              : [{ label: 'Save for later', onClick: () => onChangeItemState('saved') }]),
+            ...(itemState === 'active'
+              ? []
+              : [{ label: 'Activate', onClick: () => onChangeItemState('active') }]),
+          ]}
+        />
         {display.kind === 'custom' && onDeleteCustom && (
           <button
             onClick={onDeleteCustom}
@@ -392,6 +497,276 @@ export default function ItemCard(props: Props) {
         />
       )}
     </div>
+  )
+}
+
+// ─── Slim collapsed row (muted / saved) ──────────────────────────────────────
+
+function SlimRow({
+  itemName,
+  priority,
+  where,
+  itemState,
+  isRemoteStateChange,
+  rowRef,
+  onExpand,
+  onChangeItemState,
+}: {
+  itemName: string
+  priority: string | null
+  where: string | null
+  itemState: ItemStateValue
+  isRemoteStateChange: boolean
+  rowRef: React.RefObject<HTMLDivElement | null>
+  onExpand: () => void
+  onChangeItemState: (next: ItemStateValue) => void
+}) {
+  const isMuted = itemState === 'muted'
+  const chipColor = isMuted ? 'var(--ink-faint)' : 'var(--moss)'
+  const chipLabel = isMuted ? 'Muted' : 'Saved'
+  const ChipIcon = isMuted ? null : <BookmarkIcon />
+
+  function handleRowClick(e: React.MouseEvent) {
+    const target = e.target as HTMLElement
+    if (target.closest('button')) return
+    onExpand()
+  }
+
+  const animationCls = isRemoteStateChange ? 'card-remote-in' : 'slim-row-appear'
+
+  return (
+    <div
+      ref={rowRef}
+      onClick={handleRowClick}
+      className={animationCls}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        minHeight: 48,
+        padding: '8px 14px',
+        marginBottom: 12,
+        background: isMuted ? 'rgba(141, 150, 168, 0.06)' : 'rgba(106, 122, 79, 0.06)',
+        border: `1px solid ${isMuted ? 'rgba(141, 150, 168, 0.25)' : 'rgba(106, 122, 79, 0.3)'}`,
+        borderRadius: 6,
+        cursor: 'pointer',
+        opacity: isMuted ? 0.55 : 1,
+        transition: 'opacity 200ms ease',
+      }}
+    >
+      {priority && (
+        <span
+          style={{
+            fontSize: 9,
+            fontWeight: 600,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            padding: '3px 8px',
+            borderRadius: 4,
+            background: isMuted ? 'var(--ink-faint)' : 'var(--cream-deep)',
+            color: isMuted ? 'var(--cream)' : 'var(--ink-soft)',
+            filter: isMuted ? 'grayscale(1)' : 'none',
+            flexShrink: 0,
+          }}
+        >
+          {priority}
+        </span>
+      )}
+
+      <span
+        style={{
+          fontFamily: 'Fraunces',
+          fontSize: 17,
+          fontWeight: 400,
+          color: isMuted ? 'var(--ink-faint)' : 'var(--ink)',
+          textDecoration: isMuted ? 'line-through' : 'none',
+          flex: 1,
+          minWidth: 0,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+        title={itemName}
+      >
+        {itemName}
+      </span>
+
+      {where && (
+        <span
+          style={{
+            fontFamily: 'Manrope',
+            fontSize: 11,
+            color: 'var(--ink-faint)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            flexShrink: 0,
+          }}
+        >
+          {where}
+        </span>
+      )}
+
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          padding: '3px 10px',
+          borderRadius: 100,
+          background: chipColor,
+          color: 'var(--cream)',
+          flexShrink: 0,
+        }}
+      >
+        {ChipIcon}
+        {chipLabel}
+      </span>
+
+      <button
+        onClick={() => onChangeItemState('active')}
+        style={{
+          background: 'transparent',
+          border: `1px solid ${isMuted ? 'var(--ink-faint)' : 'var(--moss)'}`,
+          color: isMuted ? 'var(--ink-soft)' : 'var(--moss)',
+          padding: '4px 12px',
+          borderRadius: 100,
+          fontFamily: 'Manrope',
+          fontSize: 10,
+          fontWeight: 600,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          cursor: 'pointer',
+          flexShrink: 0,
+        }}
+      >
+        {isMuted ? 'Unmute' : 'Activate'}
+      </button>
+
+      <OverflowMenu
+        items={[
+          ...(isMuted
+            ? [{ label: 'Save for later instead', onClick: () => onChangeItemState('saved') }]
+            : [{ label: 'Mute instead', onClick: () => onChangeItemState('muted') }]),
+          { label: 'Activate', onClick: () => onChangeItemState('active') },
+        ]}
+      />
+    </div>
+  )
+}
+
+// ─── Tiny inline overflow menu ───────────────────────────────────────────────
+
+function OverflowMenu({ items }: { items: { label: string; onClick: () => void }[] }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  if (items.length === 0) return null
+
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        aria-label="More options"
+        title="More options"
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((o) => !o)
+        }}
+        style={{
+          marginLeft: 6,
+          background: 'transparent',
+          border: '1px solid var(--line)',
+          borderRadius: 100,
+          width: 26,
+          height: 26,
+          padding: 0,
+          cursor: 'pointer',
+          color: 'var(--ink-soft)',
+          fontFamily: 'Manrope',
+          fontSize: 14,
+          fontWeight: 700,
+          letterSpacing: '0.1em',
+          flexShrink: 0,
+        }}
+      >
+        ⋯
+      </button>
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 4px)',
+            right: 0,
+            zIndex: 30,
+            minWidth: 180,
+            background: 'var(--cream)',
+            border: '1px solid var(--line)',
+            borderRadius: 6,
+            boxShadow: '0 8px 24px -8px rgba(29, 36, 51, 0.25)',
+            padding: 4,
+          }}
+        >
+          {items.map((it) => (
+            <button
+              key={it.label}
+              onClick={(e) => {
+                e.stopPropagation()
+                setOpen(false)
+                it.onClick()
+              }}
+              style={{
+                display: 'block',
+                width: '100%',
+                textAlign: 'left',
+                background: 'transparent',
+                border: 'none',
+                padding: '8px 12px',
+                cursor: 'pointer',
+                fontFamily: 'Manrope',
+                fontSize: 13,
+                color: 'var(--ink)',
+                borderRadius: 4,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--cream-deep)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BookmarkIcon() {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+    </svg>
   )
 }
 

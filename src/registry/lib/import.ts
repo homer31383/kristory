@@ -24,9 +24,10 @@ import {
   loadCustomItems,
   loadPeople,
   loadPicks,
+  upsertItemState,
   type ItemWithTiers,
 } from '../data/queries'
-import type { Alternative, BabylistPerson, CustomItem } from '../types'
+import type { Alternative, BabylistPerson, CustomItem, ItemStateValue } from '../types'
 import type { ParsedCsvRow } from './csv'
 
 export interface ImportSummary {
@@ -99,6 +100,30 @@ export async function importCsv(
   const sessionCustoms = new Map<string, CustomItem>()
   const sessionAlts = new Map<string, Alternative>()
 
+  /**
+   * Items already given an explicit state during this import — keyed by
+   * "<kind>:<id>" to avoid writing the same upsert multiple times when a
+   * single item generates many rows (one per picked tier).
+   */
+  const stateAppliedFor = new Set<string>()
+  async function applyState(
+    kind: 'catalog' | 'custom',
+    id: string,
+    state: ItemStateValue,
+  ): Promise<void> {
+    if (state === 'active') return
+    const key = `${kind}:${id}`
+    if (stateAppliedFor.has(key)) return
+    stateAppliedFor.add(key)
+    await upsertItemState({
+      registryId,
+      itemKind: kind,
+      itemId: id,
+      state,
+      updatedBy: person!.id,
+    })
+  }
+
   for (const row of rows) {
     if (!row.section || !row.item) continue
     const key = itemKey(row.section, row.item)
@@ -112,8 +137,10 @@ export async function importCsv(
 
     if (catalogMatch) {
       parentCatalogId = catalogMatch.id
+      await applyState('catalog', catalogMatch.id, row.state)
     } else if (customMatch) {
       parentCustomId = customMatch.id
+      await applyState('custom', customMatch.id, row.state)
     } else {
       const created = await addCustomItem({
         registry_id: registryId,
@@ -134,6 +161,7 @@ export async function importCsv(
       sessionCustoms.set(key, created)
       parentCustomId = created.id
       customCount++
+      await applyState('custom', created.id, row.state)
     }
 
     if (isAlternativeRow) {

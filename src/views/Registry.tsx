@@ -27,13 +27,15 @@ import {
   addAlternative,
   addCustomItem,
   addPick,
+  clearItemState,
   deleteAlternative,
   deleteCustomItem,
   deletePick,
   updateAlternative,
   updatePickQty,
+  upsertItemState,
 } from '../registry/data/queries'
-import type { Pick } from '../registry/types'
+import type { ItemStateValue, Pick } from '../registry/types'
 import { buildCsv, downloadCsv, parseCsv, summarizeImport, todayStamp } from '../registry/lib/csv'
 import { importCsv } from '../registry/lib/import'
 import { useUser } from '../hooks/useUser'
@@ -47,6 +49,7 @@ export default function Registry() {
     priority: new Set<string>(),
     where: new Set<string>(),
     myPicksOnly: false,
+    hideMuted: false,
   })
   const [modal, setModal] = useState<AddItemMode | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -65,9 +68,28 @@ export default function Registry() {
     [data.catalog, data.customItems],
   )
 
+  /**
+   * Map of itemId → state. Items not present are 'active'. itemId is the
+   * catalog_item_id or custom_item_id (both are globally unique).
+   */
+  const stateByItem = useMemo(() => {
+    const m = new Map<string, ItemStateValue>()
+    for (const s of data.itemStates) {
+      const key = s.catalog_item_id ?? s.custom_item_id
+      if (key) m.set(key, s.state)
+    }
+    return m
+  }, [data.itemStates])
+
+  function stateOf(itemId: string): ItemStateValue {
+    return stateByItem.get(itemId) ?? 'active'
+  }
+
   const filtered = useMemo(() => {
     return allItems.filter((di) => {
       const item = di.item
+      const state = stateByItem.get(item.id) ?? 'active'
+      if (filters.hideMuted && state === 'muted') return false
       if (filters.priority.size > 0 && !filters.priority.has(item.priority ?? '')) return false
       if (filters.where.size > 0 && !filters.where.has(item.where_to_buy ?? '')) return false
       if (filters.myPicksOnly) {
@@ -75,7 +97,7 @@ export default function Registry() {
       }
       return true
     })
-  }, [allItems, filters, data.picks, data.alternatives, personId])
+  }, [allItems, filters, data.picks, data.alternatives, personId, stateByItem])
 
   const grouped = useMemo(() => {
     const g = new Map<string, DisplayItem[]>()
@@ -98,9 +120,40 @@ export default function Registry() {
     [data.alternatives],
   )
 
-  const totals = useMemo(() => computeTotals(data.catalog), [data.catalog])
+  /**
+   * Dashboard totals exclude muted items (per spec). Saved-for-later items
+   * count normally. We pass stateByItem so the helper can look up the parent
+   * item of each tier/custom/alt.
+   */
+  const totals = useMemo(
+    () =>
+      computeTotals(data.catalog, (catalogItemId) => stateByItem.get(catalogItemId) ?? 'active'),
+    [data.catalog, stateByItem],
+  )
+
+  /**
+   * Resolve the parent item for a pick, so we can check whether it's muted.
+   * For tier picks → parent is the catalog item. For custom-item picks →
+   * parent is the custom item itself. For alternative picks → walk through
+   * the alternative to find its parent.
+   */
+  function parentItemIdForPick(p: Pick): string | null {
+    if (p.catalog_tier_id) {
+      const t = tierMap.get(p.catalog_tier_id)
+      return t?.catalog_item_id ?? null
+    }
+    if (p.custom_item_id) return p.custom_item_id
+    if (p.alternative_id) {
+      const a = altMap.get(p.alternative_id)
+      return a?.catalog_item_id ?? a?.custom_item_id ?? null
+    }
+    return null
+  }
 
   function pickCost(p: Pick): number {
+    // Muted items contribute 0 — picks are preserved but zeroed.
+    const parentId = parentItemIdForPick(p)
+    if (parentId && stateByItem.get(parentId) === 'muted') return 0
     const unit =
       (p.catalog_tier_id && tierMap.get(p.catalog_tier_id)?.unit_cost) ??
       (p.custom_item_id && customMap.get(p.custom_item_id)?.unit_cost) ??
@@ -267,6 +320,22 @@ export default function Registry() {
     await deleteAlternative(id)
   }
 
+  async function handleChangeItemState(di: DisplayItem, next: ItemStateValue) {
+    const itemKind = di.kind
+    const itemId = di.item.id
+    if (next === 'active') {
+      await clearItemState({ registryId: REGISTRY_ID, itemKind, itemId })
+    } else {
+      await upsertItemState({
+        registryId: REGISTRY_ID,
+        itemKind,
+        itemId,
+        state: next,
+        updatedBy: personId,
+      })
+    }
+  }
+
   function handleExport() {
     const csv = buildCsv({
       catalogItems: data.catalog,
@@ -275,6 +344,7 @@ export default function Registry() {
       alternatives: data.alternatives,
       people: data.people,
       picks: data.picks,
+      itemStates: data.itemStates,
     })
     downloadCsv(`registry-picks-${user!.name.toLowerCase()}-${todayStamp()}.csv`, csv)
   }
@@ -388,6 +458,8 @@ export default function Registry() {
                       picks={data.picks}
                       people={data.people}
                       myPersonId={personId}
+                      itemState={stateOf(id)}
+                      isRemoteStateChange={data.remoteStateChangeIds.has(id)}
                       remotePickIds={data.remotePickIds}
                       removingPickIds={data.removingPickIds}
                       remoteAlternativeIds={data.remoteAlternativeIds}
@@ -409,6 +481,7 @@ export default function Registry() {
                       onTogglePickCustom={handleTogglePickCustom}
                       onTogglePickAlternative={handleTogglePickAlternative}
                       onChangePickQty={handleChangePickQty}
+                      onChangeItemState={(next) => handleChangeItemState(di, next)}
                       onDeleteCustom={
                         di.kind === 'custom' ? () => handleDeleteCustom(id) : undefined
                       }
@@ -516,12 +589,18 @@ function anyPickForItem(
 }
 
 function computeTotals(
-  catalog: { tiers: { tier: string; unit_cost: number | null }[]; suggested_qty: number | null }[],
+  catalog: {
+    id: string
+    tiers: { tier: string; unit_cost: number | null }[]
+    suggested_qty: number | null
+  }[],
+  stateOf: (catalogItemId: string) => ItemStateValue,
 ) {
   let allBudget = 0
   let allMid = 0
   let allPremium = 0
   for (const it of catalog) {
+    if (stateOf(it.id) === 'muted') continue
     const qty = it.suggested_qty ?? 1
     for (const t of it.tiers) {
       const c = (t.unit_cost ?? 0) * qty

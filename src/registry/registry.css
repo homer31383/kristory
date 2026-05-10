@@ -92,3 +92,25 @@
     registry-card-slide-in 280ms ease-out both,
     registry-card-highlight 1400ms ease-out 280ms both;
 }
+
+/* ───────── Muted / Saved collapse-expand transitions ─────────
+   Used when an item changes between active and a collapsed state. We don't
+   try to morph the markup mid-transition — each layout fades in on its own
+   240ms slide+fade. The remote-highlight ring layers on top via
+   `card-remote-in` when the change came from the other person. */
+
+@keyframes registry-slim-row-appear {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.registry-theme .slim-row-appear {
+  animation: registry-slim-row-appear 240ms ease-out both;
+}
+
+@keyframes registry-card-expand-appear {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.registry-theme .card-expand-appear {
+  animation: registry-card-expand-appear 240ms ease-out both;
+}

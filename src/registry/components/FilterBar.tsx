@@ -4,6 +4,7 @@ export interface Filters {
   priority: Set<string>
   where: Set<string>
   myPicksOnly: boolean
+  hideMuted: boolean
 }
 
 interface Props {
@@ -26,6 +27,9 @@ export default function FilterBar({ filters, setFilters }: Props) {
   }
   function toggleMyPicks() {
     setFilters({ ...filters, myPicksOnly: !filters.myPicksOnly })
+  }
+  function toggleHideMuted() {
+    setFilters({ ...filters, hideMuted: !filters.hideMuted })
   }
 
   return (
@@ -116,6 +120,28 @@ export default function FilterBar({ filters, setFilters }: Props) {
         }}
       >
         {filters.myPicksOnly ? 'Show all items' : 'Show only my picks'}
+      </button>
+
+      <button
+        onClick={toggleHideMuted}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          background: filters.hideMuted ? 'var(--ink-soft)' : 'transparent',
+          color: filters.hideMuted ? 'var(--cream)' : 'var(--ink-soft)',
+          padding: '8px 14px',
+          borderRadius: 100,
+          border: `1px solid ${filters.hideMuted ? 'var(--ink-soft)' : 'var(--line)'}`,
+          fontFamily: 'Manrope',
+          fontSize: 11,
+          fontWeight: 600,
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
+          cursor: 'pointer',
+        }}
+      >
+        {filters.hideMuted ? '✓ Hiding muted' : 'Hide muted'}
       </button>
     </div>
   )
