@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { UserProvider, useUser } from './hooks/useUser'
 import { ThemeProvider } from './hooks/useTheme'
 import Layout from './components/Layout'
+import AppPinLock from './components/AppPinLock'
 import UserPicker from './views/UserPicker'
 import Journal from './views/Journal'
 import EntryDetail from './views/EntryDetail'
@@ -17,6 +18,10 @@ import CreateTrip from './views/CreateTrip'
 import TripDetail from './views/TripDetail'
 import Baby from './views/Baby'
 import Settings from './views/Settings'
+import FamilyFeed from './views/FamilyFeed'
+import BabyShower from './views/BabyShower'
+import ShowerManage from './views/ShowerManage'
+import Registry from './views/Registry'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,12 +41,17 @@ function RequireUser({ children }: { children: React.ReactNode }) {
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<UserPicker />} />
+      <Route path="/" element={<AppPinLock><UserPicker /></AppPinLock>} />
+      <Route path="/family" element={<FamilyFeed />} />
+      <Route path="/shower" element={<BabyShower />} />
+      <Route path="/shower/m" element={<ShowerManage />} />
       <Route
         element={
-          <RequireUser>
-            <Layout />
-          </RequireUser>
+          <AppPinLock>
+            <RequireUser>
+              <Layout />
+            </RequireUser>
+          </AppPinLock>
         }
       >
         <Route path="/journal" element={<Journal />} />
@@ -56,6 +66,7 @@ function AppRoutes() {
         <Route path="/trips/new" element={<CreateTrip />} />
         <Route path="/trips/:tripId" element={<TripDetail />} />
         <Route path="/baby" element={<Baby />} />
+        <Route path="/registry" element={<Registry />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
     </Routes>

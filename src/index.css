@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./registry/registry.css";
 
 @theme {
   --font-display: 'Playfair Display', serif;

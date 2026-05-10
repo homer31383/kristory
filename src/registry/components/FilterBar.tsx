@@ -1,0 +1,155 @@
+import { PRIORITY_OPTIONS, WHERE_OPTIONS } from '../config'
+
+export interface Filters {
+  priority: Set<string>
+  where: Set<string>
+  myPicksOnly: boolean
+}
+
+interface Props {
+  filters: Filters
+  setFilters: (f: Filters) => void
+}
+
+export default function FilterBar({ filters, setFilters }: Props) {
+  function togglePriority(v: string) {
+    const next = new Set(filters.priority)
+    if (next.has(v)) next.delete(v)
+    else next.add(v)
+    setFilters({ ...filters, priority: next })
+  }
+  function toggleWhere(v: string) {
+    const next = new Set(filters.where)
+    if (next.has(v)) next.delete(v)
+    else next.add(v)
+    setFilters({ ...filters, where: next })
+  }
+  function toggleMyPicks() {
+    setFilters({ ...filters, myPicksOnly: !filters.myPicksOnly })
+  }
+
+  return (
+    <div
+      style={{
+        padding: '20px 0',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderBottom: '1px solid var(--line)',
+        background: 'var(--cream-deep)',
+        marginLeft: -32,
+        marginRight: -32,
+        paddingLeft: 32,
+        paddingRight: 32,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.14em',
+            color: 'var(--ink-soft)',
+          }}
+        >
+          Priority
+        </span>
+        {PRIORITY_OPTIONS.map((p) => (
+          <Pill
+            key={p}
+            active={filters.priority.has(p)}
+            onClick={() => togglePriority(p)}
+            color={
+              p === 'Before birth'
+                ? 'var(--priority-before)'
+                : p === '0-3 mo'
+                  ? 'var(--priority-0to3)'
+                  : p === '3-6 mo'
+                    ? 'var(--priority-3to6)'
+                    : 'var(--priority-nice)'
+            }
+          >
+            {p}
+          </Pill>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.14em',
+            color: 'var(--ink-soft)',
+          }}
+        >
+          Where
+        </span>
+        {WHERE_OPTIONS.map((w) => (
+          <Pill key={w} active={filters.where.has(w)} onClick={() => toggleWhere(w)}>
+            {w}
+          </Pill>
+        ))}
+      </div>
+
+      <button
+        onClick={toggleMyPicks}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          background: filters.myPicksOnly ? 'var(--ink)' : 'var(--terracotta)',
+          color: 'var(--cream)',
+          padding: '8px 18px',
+          borderRadius: 100,
+          border: 'none',
+          fontFamily: 'Manrope',
+          fontSize: 12,
+          fontWeight: 600,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
+          cursor: 'pointer',
+        }}
+      >
+        {filters.myPicksOnly ? 'Show all items' : 'Show only my picks'}
+      </button>
+    </div>
+  )
+}
+
+function Pill({
+  active,
+  onClick,
+  color,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  color?: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: active ? color ?? 'var(--ink)' : 'transparent',
+        border: `1px solid ${active ? color ?? 'var(--ink)' : 'var(--line)'}`,
+        color: active ? 'var(--cream)' : 'var(--ink-soft)',
+        padding: '6px 14px',
+        borderRadius: 100,
+        fontSize: 12,
+        fontFamily: 'Manrope',
+        fontWeight: 500,
+        letterSpacing: '0.02em',
+        cursor: 'pointer',
+        transition: 'all 0.18s ease',
+      }}
+    >
+      {children}
+    </button>
+  )
+}

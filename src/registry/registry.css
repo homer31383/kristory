@@ -1,0 +1,94 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   Babylist theme tokens scoped to the /registry route.
+   Everything is nested inside .registry-theme so it can't leak into the rest
+   of Kristory (Inter/Playfair/purple). Inside this scope the registry
+   components feel like the standalone Babylist app.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+.registry-theme {
+  --cream: #f5f0e6;
+  --cream-deep: #ebe3d2;
+  --ink: #1d2433;
+  --ink-soft: #4a5468;
+  --ink-faint: #8d96a8;
+  --terracotta: #c8633b;
+  --terracotta-soft: #e8a781;
+  --moss: #6a7a4f;
+  --sage: #a8b094;
+  --line: #d4c9b3;
+  --line-faint: #e8dfc9;
+  --priority-before: #d65a4d;
+  --priority-0to3: #d68a3c;
+  --priority-3to6: #c4a13a;
+  --priority-nice: #6a7a4f;
+  --tier-bg: #fbf7ed;
+  --tier-bg-picked: #faeee2;
+
+  --person-1: #c8633b;
+  --person-2: #6a7a4f;
+  --person-3: #5a7395;
+  --person-4: #b85932;
+
+  /* Registry's display + body fonts override the host inside this scope. */
+  --font-serif: 'Fraunces', Georgia, serif;
+  --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100%;
+
+  /* Stack the FloatingBar above Kristory's BottomNav on mobile. */
+  --registry-floatingbar-offset: 0px;
+  --registry-fab-offset: 80px;
+}
+
+@media (max-width: 767px) {
+  .registry-theme {
+    --registry-floatingbar-offset: calc(60px + env(safe-area-inset-bottom, 0px));
+    --registry-fab-offset: calc(140px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+.registry-theme ::selection { background: var(--terracotta); color: var(--cream); }
+
+.registry-theme button { font: inherit; color: inherit; }
+
+/* ───────── Realtime entrance animations ─────────
+   Applied only to elements whose changes came from a remote user — local
+   actions don't trigger these. The pulse on the badge is the "Krista just
+   picked this" tell. */
+
+@keyframes registry-badge-pulse-in {
+  0%   { opacity: 0; transform: scale(0.6); box-shadow: 0 0 0 0 rgba(200, 99, 59, 0.6); }
+  60%  { opacity: 1; transform: scale(1.1); box-shadow: 0 0 0 6px rgba(200, 99, 59, 0); }
+  100% { opacity: 1; transform: scale(1.0); box-shadow: 0 0 0 0 rgba(200, 99, 59, 0); }
+}
+.registry-theme .badge-remote-in {
+  animation: registry-badge-pulse-in 320ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes registry-badge-fade-out {
+  from { opacity: 1; transform: scale(1.0); }
+  to   { opacity: 0; transform: scale(0.6); }
+}
+.registry-theme .badge-remote-out {
+  animation: registry-badge-fade-out 200ms ease-out both;
+}
+
+@keyframes registry-card-slide-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes registry-card-highlight {
+  0%   { box-shadow: 0 0 0 2px rgba(106, 122, 79, 0.6); }
+  100% { box-shadow: 0 0 0 0 rgba(106, 122, 79, 0); }
+}
+.registry-theme .card-remote-in {
+  animation:
+    registry-card-slide-in 280ms ease-out both,
+    registry-card-highlight 1400ms ease-out 280ms both;
+}
