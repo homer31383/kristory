@@ -9,16 +9,15 @@
  *     replace vs merge.
  *
  * Identity: CSVs use names ("Chris", "Krista") rather than UUIDs. We match
- * against babylist_people.name (case-insensitive) and only create a new
- * row when the name is unknown. Newly-created people from CSV imports have
- * kristory_user_id = null (they're imported guests, not Kristory users).
+ * against babylist_people.name (case-insensitive). The registry is locked
+ * to two existing profiles, so an unknown name is a hard failure — we do
+ * NOT create a new babylist_people row from an import.
  */
 import { supabase } from '../../lib/supabase'
 import {
   addAlternative,
   addCustomItem,
   addPick,
-  createPerson,
   loadAlternatives,
   loadCatalog,
   loadCustomItems,
@@ -46,7 +45,6 @@ export interface ImportSummary {
 
 export interface ImportOptions {
   mode: 'replace' | 'merge'
-  newPersonColor?: string
 }
 
 export async function importCsv(
@@ -56,12 +54,15 @@ export async function importCsv(
   opts: ImportOptions,
 ): Promise<ImportSummary> {
   const people = await loadPeople(registryId)
-  let person: BabylistPerson | undefined = people.find(
+  const person: BabylistPerson | undefined = people.find(
     (p) => p.name.toLowerCase() === personName.toLowerCase(),
   )
   if (!person) {
-    person = await createPerson(registryId, personName, opts.newPersonColor ?? '#c8633b', null)
-  } else if (opts.mode === 'replace') {
+    throw new Error(
+      `No matching profile for "${personName}". This registry is locked to Chris and Krista.`,
+    )
+  }
+  if (opts.mode === 'replace') {
     const { error } = await supabase
       .from('babylist_picks')
       .delete()

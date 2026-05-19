@@ -1,33 +1,24 @@
 /**
- * Sync the current Kristory user to a babylist_people row.
+ * Resolve the current Kristory user to an existing babylist_people row.
  *
- * On first call:
- *   1. Look up babylist_people where registry_id = REGISTRY_ID AND
- *      kristory_user_id = current user's id.
- *   2. If found, return its id (this is the personId used everywhere else).
- *   3. If not found, create a new row. Color resolution priority:
- *      - "Chris" → #6B5CA5 (Kristory's --chris-color)
- *      - "Krista" → #D4708F (Kristory's --krista-color)
- *      - Anyone else → first unused Babylist palette color
- *      The resolved color is written to babylist_people.color so the badges
- *      look consistent in the dashboard and per-tier UI.
+ * Read-only by design. The registry is locked to two profiles — purple Chris
+ * (kristory_user_id = 9df51388-…) and Krista (cab9d09c-…). Both rows already
+ * exist in babylist_people; this hook only looks one of them up by
+ * kristory_user_id. It never inserts, upserts, or assigns colors.
  *
- * No localStorage; identity always comes from Kristory's useUser().
+ * If the lookup finds nothing (any user other than Chris or Krista), the
+ * hook surfaces a "registry is locked" error so /registry shows a clear
+ * message rather than silently failing or — worse — minting a third profile.
  */
 import { useEffect, useState } from 'react'
 import { useUser } from '../../hooks/useUser'
-import { REGISTRY_ID, PERSON_FALLBACK_COLORS } from '../config'
-import { createPerson, findPersonByKristoryUser, loadPeople } from '../data/queries'
+import { REGISTRY_ID } from '../config'
+import { findPersonByKristoryUser } from '../data/queries'
 
 export interface BabylistPersonResult {
   loading: boolean
   error: string | null
   personId: string | null
-}
-
-const KRISTORY_NAME_COLORS: Record<string, string> = {
-  chris: '#6B5CA5',
-  krista: '#D4708F',
 }
 
 export function useBabylistPerson(): BabylistPersonResult {
@@ -49,23 +40,11 @@ export function useBabylistPerson(): BabylistPersonResult {
         if (!alive) return
         if (existing) {
           setPersonId(existing.id)
-          setLoading(false)
-          return
+          setError(null)
+        } else {
+          setPersonId(null)
+          setError('This registry is locked to Chris and Krista.')
         }
-
-        // Compute a fallback color so we don't pick the same one twice.
-        const all = await loadPeople(REGISTRY_ID)
-        if (!alive) return
-        const used = new Set(all.map((p) => (p.color ?? '').toLowerCase()))
-        const nameKey = user.name.trim().toLowerCase()
-        const color =
-          KRISTORY_NAME_COLORS[nameKey] ??
-          PERSON_FALLBACK_COLORS.find((c) => !used.has(c.toLowerCase())) ??
-          PERSON_FALLBACK_COLORS[0]
-
-        const created = await createPerson(REGISTRY_ID, user.name, color, user.id)
-        if (!alive) return
-        setPersonId(created.id)
         setLoading(false)
       } catch (e) {
         if (!alive) return

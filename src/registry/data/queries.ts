@@ -71,26 +71,6 @@ export async function findPersonByKristoryUser(
   return (data as BabylistPerson | null) ?? null
 }
 
-export async function createPerson(
-  registryId: string,
-  name: string,
-  color: string,
-  kristoryUserId: string | null,
-): Promise<BabylistPerson> {
-  const { data, error } = await supabase
-    .from('babylist_people')
-    .insert({
-      registry_id: registryId,
-      name,
-      color,
-      kristory_user_id: kristoryUserId,
-    })
-    .select('*')
-    .single()
-  if (error) throw error
-  return data as BabylistPerson
-}
-
 export async function loadCustomItems(registryId: string): Promise<CustomItem[]> {
   const { data, error } = await supabase
     .from('babylist_custom_items')

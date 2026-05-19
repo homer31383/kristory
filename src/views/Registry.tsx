@@ -68,7 +68,6 @@ export default function Registry() {
   const [importPending, setImportPending] = useState<{
     rows: ReturnType<typeof parseCsv>
     personName: string
-    personExists: boolean
   } | null>(null)
 
   // ─── Build the unified display list (must be unconditional for hook order) ─
@@ -523,7 +522,14 @@ export default function Registry() {
       personName = v.trim()
     }
     const exists = data.people.some((p) => p.name.toLowerCase() === personName.toLowerCase())
-    setImportPending({ rows, personName, personExists: exists })
+    if (!exists) {
+      setToast(
+        `No matching profile for "${personName}". This registry is locked to Chris and Krista.`,
+      )
+      setTimeout(() => setToast(null), 6000)
+      return
+    }
+    setImportPending({ rows, personName })
   }
 
   async function performImport(mode: 'replace' | 'merge') {
@@ -675,7 +681,6 @@ export default function Registry() {
       {importPending && (
         <ImportConfirm
           name={importPending.personName}
-          exists={importPending.personExists}
           onCancel={() => setImportPending(null)}
           onConfirm={performImport}
         />
@@ -913,12 +918,10 @@ function computeTotals(
 
 function ImportConfirm({
   name,
-  exists,
   onCancel,
   onConfirm,
 }: {
   name: string
-  exists: boolean
   onCancel: () => void
   onConfirm: (mode: 'replace' | 'merge') => void
 }) {
@@ -951,29 +954,16 @@ function ImportConfirm({
         <h3 style={{ fontFamily: 'Fraunces', fontWeight: 400, fontSize: 22, marginBottom: 12 }}>
           Import picks for {name}?
         </h3>
-        {exists ? (
-          <p
-            style={{
-              color: 'var(--ink-soft)',
-              fontFamily: 'Fraunces',
-              fontStyle: 'italic',
-              marginBottom: 16,
-            }}
-          >
-            "{name}" already has picks here. Replace them with the CSV's picks, or merge in any new ones?
-          </p>
-        ) : (
-          <p
-            style={{
-              color: 'var(--ink-soft)',
-              fontFamily: 'Fraunces',
-              fontStyle: 'italic',
-              marginBottom: 16,
-            }}
-          >
-            We'll add a new person "{name}" and attribute the imported picks to them.
-          </p>
-        )}
+        <p
+          style={{
+            color: 'var(--ink-soft)',
+            fontFamily: 'Fraunces',
+            fontStyle: 'italic',
+            marginBottom: 16,
+          }}
+        >
+          "{name}" already has picks here. Replace them with the CSV's picks, or merge in any new ones?
+        </p>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
           <button
             onClick={onCancel}
@@ -993,26 +983,24 @@ function ImportConfirm({
           >
             Cancel
           </button>
-          {exists && (
-            <button
-              onClick={() => onConfirm('replace')}
-              style={{
-                background: 'var(--priority-before)',
-                color: 'var(--cream)',
-                border: 'none',
-                padding: '8px 16px',
-                borderRadius: 100,
-                cursor: 'pointer',
-                fontFamily: 'Manrope',
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-              }}
-            >
-              Replace
-            </button>
-          )}
+          <button
+            onClick={() => onConfirm('replace')}
+            style={{
+              background: 'var(--priority-before)',
+              color: 'var(--cream)',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: 100,
+              cursor: 'pointer',
+              fontFamily: 'Manrope',
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+            }}
+          >
+            Replace
+          </button>
           <button
             onClick={() => onConfirm('merge')}
             style={{
@@ -1029,7 +1017,7 @@ function ImportConfirm({
               textTransform: 'uppercase',
             }}
           >
-            {exists ? 'Merge' : 'Import'}
+            Merge
           </button>
         </div>
       </div>
