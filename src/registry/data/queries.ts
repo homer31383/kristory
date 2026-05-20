@@ -396,3 +396,24 @@ export async function deletePick(pickId: string): Promise<void> {
   const { error } = await supabase.from('babylist_picks').delete().eq('id', pickId)
   if (error) throw error
 }
+
+// ─── Chrome extension pairing ───────────────────────────────────────────────
+
+/**
+ * Mint a pairing token for the Baby Registry Chrome extension. The extension
+ * consumes the token and stamps `used_at`; this app only ever inserts. Each
+ * device pairs with its own token, so duplicates per person are expected and
+ * fine — no upsert, no cleanup of old unused rows.
+ */
+export async function createExtensionToken(input: {
+  token: string
+  personId: string
+  registryId: string
+}): Promise<void> {
+  const { error } = await supabase.from('babylist_extension_tokens').insert({
+    token: input.token,
+    person_id: input.personId,
+    registry_id: input.registryId,
+  })
+  if (error) throw error
+}

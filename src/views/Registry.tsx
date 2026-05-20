@@ -20,6 +20,7 @@ import type { DisplayItem } from '../registry/components/ItemCard'
 import FloatingBar from '../registry/components/FloatingBar'
 import AddItemModal from '../registry/components/AddItemModal'
 import type { AddItemMode } from '../registry/components/AddItemModal'
+import PairExtensionModal from '../registry/components/PairExtensionModal'
 import { useRegistryData } from '../registry/data/useRegistryData'
 import { useBabylistPerson } from '../registry/lib/useBabylistPerson'
 import { REGISTRY_ID } from '../registry/config'
@@ -64,6 +65,7 @@ export default function Registry() {
     showOnlySaved: false,
   })
   const [modal, setModal] = useState<AddItemMode | null>(null)
+  const [pairOpen, setPairOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [importPending, setImportPending] = useState<{
     rows: ReturnType<typeof parseCsv>
@@ -550,7 +552,7 @@ export default function Registry() {
   return (
     <div className="registry-theme" style={{ minHeight: '100vh' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 32px 220px' }}>
-        <Header />
+        <Header onPairExtension={() => setPairOpen(true)} />
         <Dashboard
           registryId={REGISTRY_ID}
           myPersonId={personId}
@@ -683,6 +685,14 @@ export default function Registry() {
           name={importPending.personName}
           onCancel={() => setImportPending(null)}
           onConfirm={performImport}
+        />
+      )}
+
+      {pairOpen && (
+        <PairExtensionModal
+          personId={personId}
+          registryId={REGISTRY_ID}
+          onClose={() => setPairOpen(false)}
         />
       )}
 
