@@ -323,6 +323,22 @@ export async function deleteCustomItem(id: string): Promise<void> {
   if (error) throw error
 }
 
+/**
+ * Edit an existing custom item. The realtime subscription on
+ * babylist_custom_items already handles UPDATE, so both people see the change
+ * live with no extra wiring.
+ */
+export async function updateCustomItem(
+  id: string,
+  patch: Partial<Omit<CustomItem, 'id' | 'registry_id' | 'created_at' | 'added_by'>>,
+): Promise<void> {
+  const { error } = await supabase
+    .from('babylist_custom_items')
+    .update(patch)
+    .eq('id', id)
+  if (error) throw error
+}
+
 export async function addAlternative(
   row: Omit<Alternative, 'id' | 'created_at'>,
 ): Promise<Alternative> {

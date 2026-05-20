@@ -6,6 +6,7 @@ import type { Alternative, CatalogTier, CustomItem } from '../types'
 
 export type AddItemMode =
   | { kind: 'custom' }
+  | { kind: 'custom-edit'; item: CustomItem }
   | {
       kind: 'alternative-new'
       parentLabel: string
@@ -25,6 +26,10 @@ interface Props {
   mode: AddItemMode
   onClose: () => void
   onSubmitCustom: (
+    data: Omit<CustomItem, 'id' | 'registry_id' | 'created_at' | 'added_by'>,
+  ) => Promise<void>
+  onSubmitCustomEdit: (
+    id: string,
     data: Omit<CustomItem, 'id' | 'registry_id' | 'created_at' | 'added_by'>,
   ) => Promise<void>
   onSubmitAlternativeNew: (data: {
@@ -63,6 +68,7 @@ export default function AddItemModal({
   mode,
   onClose,
   onSubmitCustom,
+  onSubmitCustomEdit,
   onSubmitAlternativeNew,
   onSubmitAlternativeEdit,
   onSubmitCatalogEdit,
@@ -77,11 +83,26 @@ export default function AddItemModal({
   const [priceStr, setPriceStr] = useState('')
   const [note, setNote] = useState('')
   const [url, setUrl] = useState('')
+  const [includeImage, setIncludeImage] = useState(false)
+  const [imageUrl, setImageUrl] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (mode.kind === 'alternative-edit') {
+    if (mode.kind === 'custom-edit') {
+      const it = mode.item
+      setName(it.item_name)
+      setSection(it.section)
+      setPriority(it.priority ?? PRIORITY_OPTIONS[0])
+      setWhere(it.where_to_buy ?? WHERE_OPTIONS[0])
+      setQty(String(it.suggested_qty ?? 1))
+      setProduct(it.product ?? '')
+      setPriceStr(it.price_str ?? '')
+      setNote(it.note ?? '')
+      setUrl(it.url ?? '')
+      setIncludeImage(!!it.image_url)
+      setImageUrl(it.image_url ?? '')
+    } else if (mode.kind === 'alternative-edit') {
       setProduct(mode.alt.product)
       setPriceStr(mode.alt.price_str ?? '')
       setNote(mode.alt.note ?? '')
@@ -100,8 +121,8 @@ export default function AddItemModal({
     setError(null)
     try {
       const parsedCost = parsePriceStr(priceStr)
-      if (mode.kind === 'custom') {
-        await onSubmitCustom({
+      if (mode.kind === 'custom' || mode.kind === 'custom-edit') {
+        const customData = {
           section: section.trim() || 'Other',
           item_name: name.trim() || 'Untitled',
           priority,
@@ -112,7 +133,10 @@ export default function AddItemModal({
           unit_cost: parsedCost,
           note: note.trim() || null,
           url: url.trim() || null,
-        })
+          image_url: includeImage ? imageUrl.trim() || null : null,
+        }
+        if (mode.kind === 'custom') await onSubmitCustom(customData)
+        else await onSubmitCustomEdit(mode.item.id, customData)
       } else if (mode.kind === 'alternative-new') {
         await onSubmitAlternativeNew({
           product: product.trim() || name.trim() || 'Untitled',
@@ -163,16 +187,18 @@ export default function AddItemModal({
 
   // Structural fields (name/section/priority/where/qty) only show in the
   // "custom" mode. Alternatives and catalog-edits inherit from their parent.
-  const showStructuralFields = mode.kind === 'custom'
+  const showStructuralFields = mode.kind === 'custom' || mode.kind === 'custom-edit'
   const showResetButton = mode.kind === 'catalog-edit' && mode.hasOverride
   const title =
     mode.kind === 'custom'
       ? 'Add a custom item'
-      : mode.kind === 'alternative-new'
-        ? `Add alternative for ${mode.parentLabel}`
-        : mode.kind === 'alternative-edit'
-          ? `Edit alternative for ${mode.parentLabel}`
-          : `Edit ${mode.tier.tier} for ${mode.parentLabel}`
+      : mode.kind === 'custom-edit'
+        ? 'Edit item'
+        : mode.kind === 'alternative-new'
+          ? `Add alternative for ${mode.parentLabel}`
+          : mode.kind === 'alternative-edit'
+            ? `Edit alternative for ${mode.parentLabel}`
+            : `Edit ${mode.tier.tier} for ${mode.parentLabel}`
 
   return (
     <div
@@ -295,6 +321,44 @@ export default function AddItemModal({
           />
         </Field>
 
+        {showStructuralFields && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+                fontFamily: 'Manrope',
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                color: 'var(--ink-faint)',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={includeImage}
+                onChange={(e) => setIncludeImage(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              Include image
+            </label>
+            {includeImage && (
+              <Field label="Image URL">
+                <input
+                  type="url"
+                  value={imageUrl}
+                  onChange={(e) => setImageUrl(e.target.value)}
+                  placeholder="https://…"
+                  style={inputStyle}
+                />
+              </Field>
+            )}
+          </div>
+        )}
+
         {error && <div style={{ color: 'var(--priority-before)', fontSize: 13 }}>{error}</div>}
 
         <div
@@ -321,7 +385,9 @@ export default function AddItemModal({
             <button type="submit" disabled={submitting} style={btnPrimaryStyle}>
               {submitting
                 ? 'Saving…'
-                : mode.kind === 'alternative-edit' || mode.kind === 'catalog-edit'
+                : mode.kind === 'alternative-edit' ||
+                    mode.kind === 'catalog-edit' ||
+                    mode.kind === 'custom-edit'
                   ? 'Save changes'
                   : 'Add'}
             </button>

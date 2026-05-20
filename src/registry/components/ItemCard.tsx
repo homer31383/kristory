@@ -50,6 +50,8 @@ interface Props {
   onTogglePickAlternative: (altId: string) => void
   onChangePickQty: (pickId: string, qty: number) => void
   onChangeItemState: (next: ItemStateValue) => void
+  /** Open the custom-item edit modal. Provided only for custom items. */
+  onEditCustom?: () => void
   onDeleteCustom?: () => void
 }
 
@@ -77,6 +79,7 @@ export default function ItemCard(props: Props) {
     onTogglePickAlternative,
     onChangePickQty,
     onChangeItemState,
+    onEditCustom,
     onDeleteCustom,
   } = props
 
@@ -381,19 +384,13 @@ export default function ItemCard(props: Props) {
               : [{ label: 'Activate', onClick: () => onChangeItemState('active') }]),
           ]}
         />
+        {display.kind === 'custom' && onEditCustom && (
+          <button onClick={onEditCustom} style={customActionStyle}>
+            Edit
+          </button>
+        )}
         {display.kind === 'custom' && onDeleteCustom && (
-          <button
-            onClick={onDeleteCustom}
-            style={{
-              marginLeft: 8,
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--ink-faint)',
-              fontSize: 12,
-              cursor: 'pointer',
-              textDecoration: 'underline',
-            }}
-          >
+          <button onClick={onDeleteCustom} style={customActionStyle}>
             Delete
           </button>
         )}
@@ -797,6 +794,16 @@ function BookmarkIcon() {
       <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
     </svg>
   )
+}
+
+const customActionStyle: CSSProperties = {
+  marginLeft: 8,
+  background: 'transparent',
+  border: 'none',
+  color: 'var(--ink-faint)',
+  fontSize: 12,
+  cursor: 'pointer',
+  textDecoration: 'underline',
 }
 
 const openAllStyle: CSSProperties = {
