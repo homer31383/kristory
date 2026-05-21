@@ -27,10 +27,14 @@ export interface ScannedRecipe {
 // Kept just under the serverless function's 60s maxDuration.
 const TIMEOUT_MS = 55000
 
-export async function scanRecipe(
-  base64Image: string,
-  mediaType: string,
-): Promise<ScannedRecipe> {
+export interface ScanImageInput {
+  /** Base64-encoded image data, without the `data:...;base64,` prefix. */
+  image: string
+  media_type: string
+}
+
+/** Send one or more recipe-page images to the scanner as a single recipe. */
+export async function scanRecipe(images: ScanImageInput[]): Promise<ScannedRecipe> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
 
@@ -38,7 +42,7 @@ export async function scanRecipe(
     const res = await fetch('/api/scan-recipe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: base64Image, media_type: mediaType }),
+      body: JSON.stringify({ images }),
       signal: controller.signal,
     })
 

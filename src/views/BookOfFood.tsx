@@ -1,23 +1,13 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { format, parse } from 'date-fns'
 import { useHomeCookingRecipes, useRecipeTags } from '../hooks/useRecipes'
 import type { TaggedItem } from '../types'
-import { resizeImage } from '../lib/helpers'
-import { scanRecipe, scannedRecipeToPrefill, blobToBase64 } from '../lib/scanRecipe'
 import AddRecipeSheet, { type RecipePrefill } from '../components/AddRecipeSheet'
 import SuggestionModal from '../components/SuggestionModal'
+import ScanRecipeModal from '../components/ScanRecipeModal'
 
 type SortMode = 'recent' | 'rating' | 'alpha'
-
-function Spinner() {
-  return (
-    <svg className="animate-spin" width="28" height="28" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="9" stroke="var(--border-card)" strokeWidth="3" />
-      <path d="M21 12a9 9 0 0 0-9-9" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" />
-    </svg>
-  )
-}
 
 function RecipeCard({ item, onClick }: { item: TaggedItem; onClick: () => void }) {
   const entryDate = item.entry?.entry_date
@@ -81,11 +71,7 @@ export default function BookOfFood() {
   const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set())
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [showAddRecipe, setShowAddRecipe] = useState(false)
-
-  // Recipe photo scanning
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const [scanning, setScanning] = useState(false)
-  const [scanError, setScanError] = useState<string | null>(null)
+  const [showScanModal, setShowScanModal] = useState(false)
   const [scanPrefill, setScanPrefill] = useState<RecipePrefill | null>(null)
 
   const { data: recipes = [], isLoading } = useHomeCookingRecipes(sort)
@@ -117,32 +103,6 @@ export default function BookOfFood() {
   const openManualAdd = () => {
     setScanPrefill(null)
     setShowAddRecipe(true)
-  }
-
-  const handleScanClick = () => {
-    setScanError(null)
-    fileInputRef.current?.click()
-  }
-
-  const handleScanFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = '' // reset so picking the same file again still fires onChange
-    if (!file) return
-
-    setScanError(null)
-    setScanning(true)
-    try {
-      // resizeImage always outputs JPEG, so the media type is always image/jpeg.
-      const resized = await resizeImage(file, 1200, 0.85)
-      const base64 = await blobToBase64(resized)
-      const scanned = await scanRecipe(base64, 'image/jpeg')
-      setScanPrefill(scannedRecipeToPrefill(scanned))
-      setShowAddRecipe(true)
-    } catch {
-      setScanError("Couldn't read the recipe. Try a clearer photo or add manually.")
-    } finally {
-      setScanning(false)
-    }
   }
 
   return (
@@ -189,7 +149,7 @@ export default function BookOfFood() {
             + Add Recipe
           </button>
           <button
-            onClick={handleScanClick}
+            onClick={() => setShowScanModal(true)}
             className="flex-1 py-2.5 rounded-lg text-sm font-medium border cursor-pointer flex items-center justify-center gap-1.5"
             style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
           >
@@ -205,13 +165,6 @@ export default function BookOfFood() {
           </button>
         </div>
       </div>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        onChange={(e) => { void handleScanFile(e) }}
-        className="hidden"
-      />
 
       {/* Tag filter pills */}
       <div className="flex flex-wrap gap-1.5 pb-3">
@@ -320,59 +273,16 @@ export default function BookOfFood() {
         />
       )}
 
-      {/* Scanning overlay */}
-      {scanning && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
-        >
-          <div
-            className="rounded-2xl px-8 py-7 flex flex-col items-center gap-3"
-            style={{ backgroundColor: 'var(--bg-card)' }}
-          >
-            <Spinner />
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Reading recipe with AI…
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Scan error */}
-      {scanError && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center px-6"
-          style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
-          onClick={(e) => { if (e.target === e.currentTarget) setScanError(null) }}
-        >
-          <div
-            className="rounded-2xl p-6 w-full max-w-sm text-center"
-            style={{ backgroundColor: 'var(--bg-card)' }}
-          >
-            <p className="text-sm mb-5" style={{ color: 'var(--text-primary)' }}>
-              {scanError}
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setScanError(null)}
-                className="flex-1 py-2.5 rounded-lg text-sm font-medium border cursor-pointer"
-                style={{ borderColor: 'var(--border-card)', color: 'var(--text-secondary)' }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setScanError(null)
-                  fileInputRef.current?.click()
-                }}
-                className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white cursor-pointer"
-                style={{ backgroundColor: 'var(--accent)' }}
-              >
-                Try again
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Scan Recipe staging modal */}
+      {showScanModal && (
+        <ScanRecipeModal
+          onClose={() => setShowScanModal(false)}
+          onScanned={(prefill) => {
+            setShowScanModal(false)
+            setScanPrefill(prefill)
+            setShowAddRecipe(true)
+          }}
+        />
       )}
     </div>
   )
