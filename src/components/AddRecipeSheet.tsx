@@ -1,16 +1,26 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useUser } from '../hooks/useUser'
 import { useCategories } from '../hooks/useCategories'
 import { useRecipeTags, useCreateRecipeTag, useCreateRecipe, useUpdateRecipe } from '../hooks/useRecipes'
 import type { TaggedItem } from '../types'
 
+/** Seed data for a new recipe — e.g. from the photo scanner. */
+export interface RecipePrefill {
+  name?: string
+  ingredients?: string
+  instructions?: string
+  /** Free-form tag names; matched case-insensitively against existing recipe tags. */
+  tagNames?: string[]
+}
+
 interface AddRecipeSheetProps {
   onClose: () => void
   editItem?: TaggedItem
   prefillEntryId?: string
+  prefill?: RecipePrefill
 }
 
-export default function AddRecipeSheet({ onClose, editItem, prefillEntryId }: AddRecipeSheetProps) {
+export default function AddRecipeSheet({ onClose, editItem, prefillEntryId, prefill }: AddRecipeSheetProps) {
   const { user } = useUser()
   const { data: categories = [] } = useCategories()
   const { data: recipeTags = [] } = useRecipeTags()
@@ -20,10 +30,10 @@ export default function AddRecipeSheet({ onClose, editItem, prefillEntryId }: Ad
 
   const homeCookingCat = categories.find((c) => c.name.toLowerCase() === 'home cooking')
 
-  const [name, setName] = useState(editItem?.name ?? '')
+  const [name, setName] = useState(editItem?.name ?? prefill?.name ?? '')
   const [rating, setRating] = useState<number | null>(editItem?.rating ?? null)
-  const [ingredients, setIngredients] = useState(editItem?.ingredients ?? '')
-  const [instructions, setInstructions] = useState(editItem?.instructions ?? '')
+  const [ingredients, setIngredients] = useState(editItem?.ingredients ?? prefill?.ingredients ?? '')
+  const [instructions, setInstructions] = useState(editItem?.instructions ?? prefill?.instructions ?? '')
   const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set())
   const [showNewTag, setShowNewTag] = useState(false)
   const [newTagName, setNewTagName] = useState('')
@@ -36,6 +46,19 @@ export default function AddRecipeSheet({ onClose, editItem, prefillEntryId }: Ad
       setSelectedTagIds(new Set(editItem.recipe_tags.map((rt) => rt.tag.id)))
     }
   }, [editItem])
+
+  // Match prefilled (scanned) tag names to existing recipe tags, once loaded.
+  const prefilledTagsRef = useRef(false)
+  useEffect(() => {
+    if (editItem || prefilledTagsRef.current) return
+    if (!prefill?.tagNames?.length || recipeTags.length === 0) return
+    prefilledTagsRef.current = true
+    const wanted = new Set(prefill.tagNames.map((t) => t.toLowerCase()))
+    const matched = recipeTags.filter((tag) => wanted.has(tag.name.toLowerCase()))
+    if (matched.length > 0) {
+      setSelectedTagIds(new Set(matched.map((tag) => tag.id)))
+    }
+  }, [editItem, prefill, recipeTags])
 
   const toggleTag = (tagId: string) => {
     setSelectedTagIds((prev) => {
@@ -111,7 +134,7 @@ export default function AddRecipeSheet({ onClose, editItem, prefillEntryId }: Ad
       >
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-            {editItem ? 'Edit Recipe' : 'Add Recipe'}
+            {editItem ? 'Edit Recipe' : prefill ? 'Review Scanned Recipe' : 'Add Recipe'}
           </h3>
           <button
             onClick={onClose}

@@ -3,6 +3,7 @@
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "functions": {
-    "api/parse-ingredients.ts": { "maxDuration": 60 }
+    "api/parse-ingredients.ts": { "maxDuration": 60 },
+    "api/scan-recipe.ts": { "maxDuration": 60 }
   }
 }
