@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { format, parse } from 'date-fns'
 import { useRecipe, useUpdateRecipe } from '../hooks/useRecipes'
 import AddRecipeSheet from '../components/AddRecipeSheet'
+import SaveAsMealModal from '../components/SaveAsMealModal'
 
 export default function RecipeDetail() {
   const { recipeId } = useParams<{ recipeId: string }>()
@@ -10,6 +11,8 @@ export default function RecipeDetail() {
   const { data: recipe, isLoading } = useRecipe(recipeId ?? '')
   const updateRecipe = useUpdateRecipe()
   const [editing, setEditing] = useState(false)
+  const [showMealModal, setShowMealModal] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
 
   if (!recipeId) return null
 
@@ -108,12 +111,37 @@ export default function RecipeDetail() {
       {/* Ingredients */}
       {recipe.ingredients && (
         <div className="mb-5">
-          <h2
-            className="text-xs font-semibold uppercase tracking-wider mb-2"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            Ingredients
-          </h2>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <h2
+              className="text-xs font-semibold uppercase tracking-wider"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Ingredients
+            </h2>
+            <button
+              onClick={() => setShowMealModal(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border cursor-pointer flex-shrink-0"
+              style={{ borderColor: 'var(--border-card)', color: 'var(--accent)' }}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <circle cx="9" cy="21" r="1" />
+                <circle cx="20" cy="21" r="1" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"
+                />
+              </svg>
+              Save as Axiom Meal
+            </button>
+          </div>
           <div
             className="rounded-xl border p-4"
             style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
@@ -179,6 +207,33 @@ export default function RecipeDetail() {
           onClose={() => setEditing(false)}
           editItem={recipe}
         />
+      )}
+
+      {/* Save as Axiom Meal */}
+      {showMealModal && (
+        <SaveAsMealModal
+          recipe={recipe}
+          onClose={() => setShowMealModal(false)}
+          onSaved={() => {
+            setShowMealModal(false)
+            setToast('Saved to Axiom Meals!')
+            setTimeout(() => setToast(null), 4000)
+          }}
+        />
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div
+          className="fixed left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-lg text-sm font-medium shadow-lg z-50"
+          style={{
+            bottom: 88,
+            backgroundColor: 'var(--text-primary)',
+            color: 'var(--bg-card)',
+          }}
+        >
+          {toast}
+        </div>
       )}
     </div>
   )
