@@ -11,7 +11,8 @@ export interface ParsedIngredient {
   notes: string | null
 }
 
-const TIMEOUT_MS = 15000
+// Kept just under the serverless function's 60s maxDuration.
+const TIMEOUT_MS = 55000
 
 export async function parseRecipeIngredients(
   ingredients: string,
