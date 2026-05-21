@@ -12,10 +12,14 @@ import {
   PREGNANCY_MILESTONES,
   FIRST_YEAR_MILESTONES,
 } from '../hooks/useBaby'
+import { useFamilyPostIds, useCreateFamilyPost } from '../hooks/useFamilyFeed'
+import BottomSheet from '../components/ui/BottomSheet'
+import { useBabyNameSuggestions, useDeleteBabyName } from '../hooks/useBabyNames'
+import { useUser } from '../hooks/useUser'
 import { getStorageUrl, truncateText } from '../lib/helpers'
-import type { BabyMilestone } from '../types'
+import type { BabyMilestone, BabyNameSuggestion } from '../types'
 
-type Tab = 'timeline' | 'milestones' | 'firsts'
+type Tab = 'timeline' | 'milestones' | 'firsts' | 'names'
 
 function BabyCountdown({ dueDate, birthDate, name }: { dueDate: string | null; birthDate: string | null; name: string | null }) {
   const today = new Date()
@@ -63,6 +67,11 @@ export default function Baby() {
   const updateMilestone = useUpdateBabyMilestone()
   const deleteMilestone = useDeleteBabyMilestone()
   const { data: taggedEntries = [] } = useBabyTaggedEntries()
+  const { data: sharedEntryIds } = useFamilyPostIds()
+  const createFamilyPost = useCreateFamilyPost()
+  const { data: nameSuggestions = [] } = useBabyNameSuggestions()
+  const deleteBabyName = useDeleteBabyName()
+  const { user } = useUser()
 
   const [activeTab, setActiveTab] = useState<Tab>('timeline')
   const [editingProfile, setEditingProfile] = useState(false)
@@ -80,6 +89,10 @@ export default function Baby() {
   const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null)
   const [editDate, setEditDate] = useState('')
   const [editNotes, setEditNotes] = useState('')
+  const [milestoneSharePrompt, setMilestoneSharePrompt] = useState<{ title: string; entryId?: string; date: string } | null>(null)
+  const [milestoneShareCaption, setMilestoneShareCaption] = useState('')
+  const [showShareSheet, setShowShareSheet] = useState(false)
+  const [shareCopied, setShareCopied] = useState(false)
 
   const startEditProfile = () => {
     setProfileName(profile?.name ?? '')
@@ -137,11 +150,14 @@ export default function Baby() {
 
   const handleCompleteMilestone = async (title: string, type: string) => {
     const today = format(new Date(), 'yyyy-MM-dd')
-    await createMilestone.mutateAsync({
+    const result = await createMilestone.mutateAsync({
       title,
       milestone_type: type,
       milestone_date: today,
     })
+    // Show share prompt
+    setMilestoneShareCaption(title)
+    setMilestoneSharePrompt({ title, entryId: result.entry_id ?? undefined, date: today })
   }
 
   const handleAddCustomMilestone = async () => {
@@ -298,9 +314,127 @@ export default function Baby() {
         </div>
       )}
 
+      {/* Family Feed Card */}
+      {(() => {
+        const feedUrl = `${window.location.origin}/family`
+        const pin = profile?.family_pin || '2026'
+        const shareMessage = `Follow along with our baby updates! Visit ${feedUrl} and enter PIN: ${pin}`
+        return (
+          <div
+            className="rounded-xl border p-4 mb-5"
+            style={{ backgroundColor: '#FFF8E7', borderColor: '#F0C987' }}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Family Feed</div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>PIN: {pin}</div>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowShareSheet(true)}
+              className="w-full py-2.5 rounded-lg text-sm font-medium border border-dashed cursor-pointer"
+              style={{ borderColor: '#D4A853', color: '#D4A853' }}
+            >
+              Share with Family
+            </button>
+
+            <BottomSheet
+              isOpen={showShareSheet}
+              onClose={() => { setShowShareSheet(false); setShareCopied(false) }}
+              title="Share Family Feed"
+            >
+              <div className="space-y-2">
+                {/* Native share (mobile) */}
+                {typeof navigator !== 'undefined' && !!navigator.share && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await navigator.share({ title: 'Baby Updates from The Babory', text: shareMessage })
+                      } catch { /* user cancelled */ }
+                      setShowShareSheet(false)
+                    }}
+                    className="w-full text-left rounded-xl border p-3 flex items-center gap-3 cursor-pointer"
+                    style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+                  >
+                    <span className="text-lg">📤</span>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Share...</div>
+                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Use your device's share menu</div>
+                    </div>
+                  </button>
+                )}
+
+                {/* Text / SMS */}
+                <a
+                  href={`sms:?body=${encodeURIComponent(shareMessage)}`}
+                  onClick={() => setShowShareSheet(false)}
+                  className="w-full text-left rounded-xl border p-3 flex items-center gap-3 cursor-pointer block"
+                  style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)', textDecoration: 'none' }}
+                >
+                  <span className="text-lg">💬</span>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Text</div>
+                    <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Send via SMS</div>
+                  </div>
+                </a>
+
+                {/* Email */}
+                <a
+                  href={`mailto:?subject=${encodeURIComponent('Baby Updates from The Babory')}&body=${encodeURIComponent(shareMessage)}`}
+                  onClick={() => setShowShareSheet(false)}
+                  className="w-full text-left rounded-xl border p-3 flex items-center gap-3 cursor-pointer block"
+                  style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)', textDecoration: 'none' }}
+                >
+                  <span className="text-lg">📧</span>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Email</div>
+                    <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Send via email</div>
+                  </div>
+                </a>
+
+                {/* Copy */}
+                <button
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(shareMessage)
+                    setShareCopied(true)
+                    setTimeout(() => { setShareCopied(false); setShowShareSheet(false) }, 1200)
+                  }}
+                  className="w-full text-left rounded-xl border p-3 flex items-center gap-3 cursor-pointer"
+                  style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+                >
+                  <span className="text-lg">📋</span>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                      {shareCopied ? 'Copied!' : 'Copy Link & PIN'}
+                    </div>
+                    <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Copy to clipboard</div>
+                  </div>
+                </button>
+              </div>
+            </BottomSheet>
+          </div>
+        )
+      })()}
+
+      {/* Baby Shower Card */}
+      <a
+        href="/shower/m"
+        className="rounded-xl border p-4 mb-5 flex items-center gap-3 no-underline block"
+        style={{ backgroundColor: '#FFF8E7', borderColor: '#F0C987', textDecoration: 'none' }}
+      >
+        <span style={{ fontSize: 24 }}>🎉</span>
+        <div className="flex-1">
+          <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Baby Shower</div>
+          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Manage guests, RSVPs & gifts</div>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--text-muted)' }}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
+      </a>
+
       {/* Tabs */}
       <div className="flex gap-1 mb-5 rounded-xl p-1" style={{ backgroundColor: 'var(--bg-card)' }}>
-        {(['timeline', 'milestones', 'firsts'] as Tab[]).map((tab) => (
+        {(['timeline', 'milestones', 'firsts', 'names'] as Tab[]).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -310,7 +444,7 @@ export default function Baby() {
               color: activeTab === tab ? 'white' : 'var(--text-secondary)',
             }}
           >
-            {tab === 'timeline' ? 'Timeline' : tab === 'milestones' ? 'Milestones' : 'Firsts'}
+            {tab === 'timeline' ? 'Timeline' : tab === 'milestones' ? 'Milestones' : tab === 'firsts' ? 'Firsts' : 'Names'}
           </button>
         ))}
       </div>
@@ -320,6 +454,7 @@ export default function Baby() {
         <TimelineTab
           items={timelineItems}
           navigate={navigate}
+          sharedEntryIds={sharedEntryIds}
         />
       )}
 
@@ -353,6 +488,87 @@ export default function Baby() {
       {activeTab === 'firsts' && (
         <FirstsTab firsts={firsts} />
       )}
+
+      {activeTab === 'names' && (
+        <NamesTab names={nameSuggestions} onDelete={deleteBabyName.mutateAsync} />
+      )}
+
+      {/* Milestone share prompt */}
+      {milestoneSharePrompt && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
+          onClick={() => setMilestoneSharePrompt(null)}
+        >
+          <div
+            className="rounded-2xl p-5 mx-4 w-full max-w-sm"
+            style={{ backgroundColor: 'white' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-center mb-4">
+              <div className="text-3xl mb-2">🏆</div>
+              <h3
+                className="text-lg font-semibold mb-1"
+                style={{ color: 'var(--text-primary)', fontFamily: "'Playfair Display', serif" }}
+              >
+                {milestoneSharePrompt.title}
+              </h3>
+              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                Share this milestone with family?
+              </p>
+            </div>
+
+            <textarea
+              value={milestoneShareCaption}
+              onChange={(e) => setMilestoneShareCaption(e.target.value)}
+              placeholder="Add a caption..."
+              rows={2}
+              className="w-full rounded-lg border p-2.5 text-sm resize-none mb-3"
+              style={{
+                backgroundColor: 'var(--input-bg)',
+                borderColor: 'var(--border-card)',
+                color: 'var(--text-primary)',
+              }}
+            />
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setMilestoneSharePrompt(null)}
+                className="flex-1 py-2.5 rounded-lg text-sm font-medium cursor-pointer"
+                style={{ color: 'var(--text-secondary)', backgroundColor: 'var(--bg-page)' }}
+              >
+                Not now
+              </button>
+              <button
+                onClick={async () => {
+                  if (!user) return
+                  // If there's a linked entry, create family post for it
+                  if (milestoneSharePrompt.entryId) {
+                    await createFamilyPost.mutateAsync({
+                      entryId: milestoneSharePrompt.entryId,
+                      caption: milestoneShareCaption.trim() || milestoneSharePrompt.title,
+                      userId: user.id,
+                      photoIds: [],
+                      entryDate: milestoneSharePrompt.date,
+                    })
+                  }
+                  // If no entry, navigate to today's journal to share from there
+                  else {
+                    const today = format(new Date(), 'yyyy-MM-dd')
+                    navigate(`/journal/${today}`)
+                  }
+                  setMilestoneSharePrompt(null)
+                }}
+                disabled={createFamilyPost.isPending}
+                className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white cursor-pointer disabled:opacity-50"
+                style={{ backgroundColor: '#6B5CA5' }}
+              >
+                {createFamilyPost.isPending ? 'Sharing...' : 'Share'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -361,9 +577,11 @@ export default function Baby() {
 function TimelineTab({
   items,
   navigate,
+  sharedEntryIds,
 }: {
   items: Array<{ type: 'milestone' | 'entry'; data: any; date: string }>
   navigate: (path: string) => void
+  sharedEntryIds?: Set<string>
 }) {
   if (items.length === 0) {
     return (
@@ -443,6 +661,11 @@ function TimelineTab({
                   <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F0FAF0', color: '#4A9D5A' }}>
                     👶 Baby
                   </span>
+                  {sharedEntryIds?.has(entry.id) && (
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F3F0FF', color: '#6B5CA5' }}>
+                      Shared
+                    </span>
+                  )}
                   <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{dateLabel}</span>
                 </div>
                 {preview && (
@@ -980,6 +1203,59 @@ function FirstsTab({ firsts }: { firsts: BabyMilestone[] }) {
           )
         })}
       </div>
+    </div>
+  )
+}
+
+// ---- Names Tab ----
+function NamesTab({ names, onDelete }: { names: BabyNameSuggestion[]; onDelete: (id: string) => Promise<void> }) {
+  if (names.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <div className="text-4xl mb-3">💭</div>
+        <h3 className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+          No name suggestions yet
+        </h3>
+        <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+          Share the family feed link so family can suggest baby names.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {names.map((n) => {
+        const d = new Date(n.created_at)
+        const dateLabel = format(d, 'MMM d, yyyy')
+        return (
+          <div
+            key={n.id}
+            className="flex items-center gap-3 rounded-xl border p-3"
+            style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+          >
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                {n.name}
+              </div>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                {n.suggested_by ? `by ${n.suggested_by} · ` : ''}{dateLabel}
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                if (confirm(`Remove "${n.name}"?`)) {
+                  await onDelete(n.id)
+                }
+              }}
+              className="w-6 h-6 flex items-center justify-center rounded-full text-xs cursor-pointer flex-shrink-0"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              ✕
+            </button>
+          </div>
+        )
+      })}
     </div>
   )
 }

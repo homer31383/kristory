@@ -197,6 +197,7 @@ export async function importCsv(
         unit_cost: isAlternativeRow ? null : safeUnitCost(row.totalCost, row.qty),
         note: isAlternativeRow ? null : row.note || null,
         url: isAlternativeRow ? null : row.link || null,
+        image_url: null,
       })
       customMatch = created
       customsByKey.set(key, created)
@@ -222,6 +223,7 @@ export async function importCsv(
           unit_cost: safeUnitCost(row.totalCost, row.qty),
           note: row.note || null,
           url: row.link || null,
+          image_url: null,
         })
         alts.push(alt)
         sessionAlts.set(altKey, alt)

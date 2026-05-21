@@ -78,6 +78,9 @@ export interface CustomItem {
   unit_cost: number | null
   note: string | null
   url: string | null
+  /** Optional product image URL — added by migration 022_image_urls.sql
+   *  (extension repo). Captured by the Chrome extension or the in-app modal. */
+  image_url: string | null
   created_at: string
 }
 
@@ -92,6 +95,9 @@ export interface Alternative {
   unit_cost: number | null
   note: string | null
   url: string | null
+  /** Optional product image URL — added by migration 022_image_urls.sql
+   *  (extension repo). Written by the Chrome extension. */
+  image_url: string | null
   created_at: string
 }
 

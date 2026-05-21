@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useEntry, useCreateEntry, useUpsertSection, useUploadPhoto, useDeletePhoto, useAddTaggedItem, useDeleteTaggedItem } from '../hooks/useEntries'
 import { useTrips, useAddEntryToTrip, useRemoveEntryFromTrip } from '../hooks/useTrips'
 import { useBabyMilestones, useCreateBabyMilestone, PREGNANCY_MILESTONES, FIRST_YEAR_MILESTONES } from '../hooks/useBaby'
+import { useFamilyPostForEntry, useCreateFamilyPost, useUpdateFamilyPost, useDeleteFamilyPost } from '../hooks/useFamilyFeed'
 import { useUser } from '../hooks/useUser'
 import { formatDateHeading, getStorageUrl, resizeImage, getTodayString } from '../lib/helpers'
 import { DEBOUNCE_SAVE_MS } from '../lib/constants'
@@ -27,6 +28,10 @@ export default function EntryDetail() {
   const removeEntryFromTrip = useRemoveEntryFromTrip()
   const { data: babyMilestones = [] } = useBabyMilestones()
   const createBabyMilestone = useCreateBabyMilestone()
+  const { data: familyPost, isLoading: familyPostLoading } = useFamilyPostForEntry(entry?.id)
+  const createFamilyPost = useCreateFamilyPost()
+  const updateFamilyPost = useUpdateFamilyPost()
+  const deleteFamilyPost = useDeleteFamilyPost()
 
   const [isEditing, setIsEditing] = useState(false)
   const [localContent, setLocalContent] = useState('')
@@ -40,6 +45,13 @@ export default function EntryDetail() {
   const [showTripSheet, setShowTripSheet] = useState(false)
   const [showMilestoneSheet, setShowMilestoneSheet] = useState(false)
   const [customMilestoneTitle, setCustomMilestoneTitle] = useState('')
+
+  // Family feed share state
+  const [familyShareOpen, setFamilyShareOpen] = useState(false)
+  const [familyCaption, setFamilyCaption] = useState('')
+  const [familySelectedPhotos, setFamilySelectedPhotos] = useState<Set<string>>(new Set())
+  const [familySaving, setFamilySaving] = useState(false)
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const entryIdRef = useRef<string | null>(null)
@@ -58,6 +70,18 @@ export default function EntryDetail() {
       entryIdRef.current = null
     }
   }, [entry, user?.id])
+
+  // Sync family post state when data loads
+  useEffect(() => {
+    if (familyPost) {
+      setFamilyShareOpen(true)
+      setFamilyCaption(familyPost.caption ?? '')
+      const photoIds = new Set((familyPost.photos ?? []).map(p => p.entry_photo_id))
+      setFamilySelectedPhotos(photoIds)
+    } else if (!familyPostLoading) {
+      setFamilyShareOpen(false)
+    }
+  }, [familyPost, familyPostLoading])
 
   const ensureEntry = useCallback(async (): Promise<string> => {
     if (entryIdRef.current) return entryIdRef.current
@@ -197,6 +221,70 @@ export default function EntryDetail() {
       entryIdRef.current = null
       navigate(`/journal/${newDate}`, { replace: true })
     }
+  }
+
+  const handleFamilyToggle = async () => {
+    if (familyShareOpen && familyPost) {
+      // Turning off — show confirmation
+      setShowRemoveConfirm(true)
+    } else if (!familyShareOpen) {
+      // Turning on — initialize caption from user's section text
+      setFamilyShareOpen(true)
+      const mySection = entry?.sections?.find((s: EntrySection) => s.user_id === user?.id)
+      const plainText = mySection?.content
+        ? mySection.content.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
+        : ''
+      setFamilyCaption(plainText)
+      // Select all photos by default
+      setFamilySelectedPhotos(new Set((entry?.photos ?? []).map(p => p.id)))
+    }
+  }
+
+  const handleFamilyRemove = async () => {
+    if (!familyPost) return
+    await deleteFamilyPost.mutateAsync(familyPost.id)
+    setFamilyShareOpen(false)
+    setFamilyCaption('')
+    setFamilySelectedPhotos(new Set())
+    setShowRemoveConfirm(false)
+  }
+
+  const handleFamilySave = async () => {
+    if (!entry || !user) return
+    setFamilySaving(true)
+    try {
+      const photoIds = Array.from(familySelectedPhotos)
+      if (familyPost) {
+        await updateFamilyPost.mutateAsync({
+          postId: familyPost.id,
+          caption: familyCaption.trim() || null,
+          photoIds,
+        })
+      } else {
+        await createFamilyPost.mutateAsync({
+          entryId: entry.id,
+          caption: familyCaption.trim() || null,
+          userId: user.id,
+          photoIds,
+          entryDate: date!,
+        })
+      }
+    } catch (err) {
+      console.error('Failed to save family post:', err)
+    }
+    setFamilySaving(false)
+  }
+
+  const toggleFamilyPhoto = (photoId: string) => {
+    setFamilySelectedPhotos(prev => {
+      const next = new Set(prev)
+      if (next.has(photoId)) {
+        next.delete(photoId)
+      } else {
+        next.add(photoId)
+      }
+      return next
+    })
   }
 
   if (!date) return null
@@ -596,6 +684,147 @@ export default function EntryDetail() {
           </div>
         ))}
       </div>
+
+      {/* Share to Family */}
+      {entry && (
+        <div className="mt-6">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+              Family Feed
+            </span>
+            <button
+              onClick={handleFamilyToggle}
+              className="w-10 h-6 rounded-full relative cursor-pointer transition-colors duration-200"
+              style={{ backgroundColor: familyShareOpen ? '#6B5CA5' : 'var(--border-card)' }}
+            >
+              <div
+                className="w-4 h-4 rounded-full bg-white absolute top-1 transition-all duration-200"
+                style={{ left: familyShareOpen ? '22px' : '2px' }}
+              />
+            </button>
+          </div>
+
+          {familyShareOpen && (
+            <div
+              className="rounded-xl border p-4 space-y-3"
+              style={{ backgroundColor: '#FFF8E7', borderColor: '#F0E6C8' }}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm">👨\u200D👩\u200D👧</span>
+                <span className="text-xs font-medium" style={{ color: '#B8860B' }}>
+                  {familyPost ? 'Shared to family feed' : 'Share this entry with family'}
+                </span>
+              </div>
+
+              {/* Caption */}
+              <div>
+                <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>
+                  Caption
+                </label>
+                <textarea
+                  value={familyCaption}
+                  onChange={(e) => setFamilyCaption(e.target.value)}
+                  placeholder="Write a caption for family..."
+                  rows={3}
+                  className="w-full rounded-lg border p-2.5 text-sm resize-none"
+                  style={{
+                    backgroundColor: 'white',
+                    borderColor: '#E8E4DE',
+                    color: 'var(--text-primary)',
+                  }}
+                />
+              </div>
+
+              {/* Photo selector */}
+              {photos.length > 0 && (
+                <div>
+                  <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>
+                    Photos to share
+                  </label>
+                  <div className="flex gap-2 flex-wrap">
+                    {photos
+                      .sort((a, b) => a.display_order - b.display_order)
+                      .map((photo) => {
+                        const selected = familySelectedPhotos.has(photo.id)
+                        return (
+                          <button
+                            key={photo.id}
+                            onClick={() => toggleFamilyPhoto(photo.id)}
+                            className="relative w-16 h-16 rounded-lg overflow-hidden cursor-pointer"
+                            style={{
+                              opacity: selected ? 1 : 0.4,
+                              outline: selected ? '2px solid #6B5CA5' : 'none',
+                              outlineOffset: 1,
+                            }}
+                          >
+                            <img
+                              src={getStorageUrl(photo.storage_path)}
+                              alt=""
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+                            <div
+                              className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs"
+                              style={{
+                                backgroundColor: selected ? '#6B5CA5' : 'rgba(255,255,255,0.7)',
+                                color: selected ? 'white' : 'transparent',
+                              }}
+                            >
+                              {selected ? '✓' : ''}
+                            </div>
+                          </button>
+                        )
+                      })}
+                  </div>
+                  {familySelectedPhotos.size === 0 && (
+                    <p className="text-xs mt-1" style={{ color: '#B8860B' }}>
+                      No photos selected (text-only post)
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Save button */}
+              <button
+                onClick={handleFamilySave}
+                disabled={familySaving}
+                className="w-full py-2.5 rounded-lg text-sm font-medium text-white cursor-pointer disabled:opacity-50"
+                style={{ backgroundColor: '#6B5CA5' }}
+              >
+                {familySaving ? 'Saving...' : familyPost ? 'Update Family Post' : 'Share to Family'}
+              </button>
+            </div>
+          )}
+
+          {/* Remove confirmation */}
+          {showRemoveConfirm && (
+            <div
+              className="rounded-xl border p-4 mt-2"
+              style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+            >
+              <p className="text-sm mb-3" style={{ color: 'var(--text-primary)' }}>
+                Remove from family feed?
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => setShowRemoveConfirm(false)}
+                  className="px-3 py-1.5 rounded-lg text-sm cursor-pointer"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleFamilyRemove}
+                  className="px-3 py-1.5 rounded-lg text-sm font-medium text-white cursor-pointer"
+                  style={{ backgroundColor: '#E5534B' }}
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Milestone picker sheet */}
       <BottomSheet

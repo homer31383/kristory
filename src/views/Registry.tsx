@@ -35,6 +35,7 @@ import {
   deleteCustomItem,
   deletePick,
   updateAlternative,
+  updateCustomItem,
   updatePickQty,
   upsertCatalogTierOverride,
   upsertItemState,
@@ -327,8 +328,28 @@ export default function Registry() {
     unit_cost: number | null
     note: string | null
     url: string | null
+    image_url: string | null
   }) {
     await addCustomItem({ ...input, registry_id: REGISTRY_ID, added_by: personId })
+  }
+
+  async function handleEditCustomItem(
+    id: string,
+    input: {
+      section: string
+      item_name: string
+      priority: string | null
+      where_to_buy: string | null
+      suggested_qty: number | null
+      product: string | null
+      price_str: string | null
+      unit_cost: number | null
+      note: string | null
+      url: string | null
+      image_url: string | null
+    },
+  ) {
+    await updateCustomItem(id, input)
   }
 
   async function handleAddAlternative(input: {
@@ -350,6 +371,7 @@ export default function Registry() {
       unit_cost: input.unit_cost,
       note: input.note,
       url: input.url,
+      image_url: null,
     })
   }
 
@@ -628,6 +650,11 @@ export default function Registry() {
                       onTogglePickAlternative={handleTogglePickAlternative}
                       onChangePickQty={handleChangePickQty}
                       onChangeItemState={(next) => handleChangeItemState(di, next)}
+                      onEditCustom={
+                        di.kind === 'custom'
+                          ? () => setModal({ kind: 'custom-edit', item: di.item })
+                          : undefined
+                      }
                       onDeleteCustom={
                         di.kind === 'custom' ? () => handleDeleteCustom(id) : undefined
                       }
@@ -673,6 +700,7 @@ export default function Registry() {
           mode={modal}
           onClose={() => setModal(null)}
           onSubmitCustom={handleAddCustomItem}
+          onSubmitCustomEdit={handleEditCustomItem}
           onSubmitAlternativeNew={handleAddAlternative}
           onSubmitAlternativeEdit={handleEditAlternative}
           onSubmitCatalogEdit={handleSubmitCatalogEdit}

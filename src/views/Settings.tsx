@@ -1,10 +1,15 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { format } from 'date-fns'
 import { useTheme } from '../hooks/useTheme'
 import { useUser } from '../hooks/useUser'
 import { useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory } from '../hooks/useCategories'
 import { useTrips } from '../hooks/useTrips'
 import { useBabyProfile, useUpdateBabyProfile } from '../hooks/useBaby'
+import { useUpdateFamilyPin } from '../hooks/useFamilyFeed'
+import { useAppPin, useSetAppPin, useRemoveAppPin } from '../hooks/useAppPin'
+import { useBackupSettings, useUpdateBackupReminder } from '../hooks/useBackup'
+import { createFullBackup, estimateBackupSize, type BackupProgress } from '../lib/backup'
 import { exportJSON, exportPDF } from '../lib/export'
 import ImportJournal from '../components/ImportJournal'
 import ImportRecipes from '../components/ImportRecipes'
@@ -21,6 +26,12 @@ export default function Settings() {
   const { data: trips = [] } = useTrips()
   const { data: babyProfile } = useBabyProfile()
   const updateBabyProfile = useUpdateBabyProfile()
+  const updateFamilyPin = useUpdateFamilyPin()
+  const { data: currentAppPin } = useAppPin()
+  const setAppPin = useSetAppPin()
+  const removeAppPin = useRemoveAppPin()
+  const { data: backupSettings } = useBackupSettings()
+  const updateBackupReminder = useUpdateBackupReminder()
 
   const [showAddCategory, setShowAddCategory] = useState(false)
   const [newCatName, setNewCatName] = useState('')
@@ -42,6 +53,23 @@ export default function Settings() {
   const [babyWeight, setBabyWeight] = useState('')
   const [babyLength, setBabyLength] = useState('')
   const [showBabyWidget, setShowBabyWidget] = useState(() => localStorage.getItem('kristory-baby-widget-hidden') !== 'true')
+
+  // Family feed
+  const [editingPin, setEditingPin] = useState(false)
+  const [familyPin, setFamilyPin] = useState('')
+  const [linkCopied, setLinkCopied] = useState(false)
+
+  // App PIN
+  const [editingAppPin, setEditingAppPin] = useState(false)
+  const [appPinInput, setAppPinInput] = useState('')
+  const [appPinConfirm, setAppPinConfirm] = useState('')
+  const [appPinError, setAppPinError] = useState('')
+
+  // Backup
+  const [backingUp, setBackingUp] = useState(false)
+  const [backupProgress, setBackupProgress] = useState<BackupProgress | null>(null)
+  const [backupEstimate, setBackupEstimate] = useState<{ photoCount: number; estimatedMB: number } | null>(null)
+  const [estimateLoading, setEstimateLoading] = useState(false)
 
   const startEditBaby = () => {
     setBabyName(babyProfile?.name ?? '')
@@ -189,6 +217,130 @@ export default function Settings() {
             </button>
           ))}
         </div>
+      </Section>
+
+      {/* App PIN */}
+      <Section title="App PIN">
+        {editingAppPin ? (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>
+                {currentAppPin ? 'New PIN' : 'Set a PIN'}
+              </label>
+              <input
+                type="password"
+                inputMode="numeric"
+                value={appPinInput}
+                onChange={(e) => { setAppPinInput(e.target.value); setAppPinError('') }}
+                placeholder="Enter PIN"
+                autoFocus
+                className="w-full rounded-lg border p-2.5 text-sm"
+                style={{ backgroundColor: 'var(--input-bg)', borderColor: 'var(--border-card)', color: 'var(--text-primary)', letterSpacing: 4 }}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>Confirm PIN</label>
+              <input
+                type="password"
+                inputMode="numeric"
+                value={appPinConfirm}
+                onChange={(e) => { setAppPinConfirm(e.target.value); setAppPinError('') }}
+                placeholder="Confirm PIN"
+                className="w-full rounded-lg border p-2.5 text-sm"
+                style={{ backgroundColor: 'var(--input-bg)', borderColor: 'var(--border-card)', color: 'var(--text-primary)', letterSpacing: 4 }}
+              />
+            </div>
+            {appPinError && (
+              <p className="text-xs" style={{ color: '#E5534B' }}>{appPinError}</p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => { setEditingAppPin(false); setAppPinInput(''); setAppPinConfirm(''); setAppPinError('') }}
+                className="px-4 py-2 rounded-lg text-sm font-medium cursor-pointer"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (!appPinInput.trim()) {
+                    setAppPinError('PIN cannot be empty')
+                    return
+                  }
+                  if (appPinInput !== appPinConfirm) {
+                    setAppPinError('PINs do not match')
+                    return
+                  }
+                  await setAppPin.mutateAsync(appPinInput.trim())
+                  setEditingAppPin(false)
+                  setAppPinInput('')
+                  setAppPinConfirm('')
+                }}
+                disabled={setAppPin.isPending}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-white cursor-pointer disabled:opacity-50"
+                style={{ backgroundColor: 'var(--accent)' }}
+              >
+                {setAppPin.isPending ? 'Saving...' : 'Save PIN'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div
+              className="rounded-lg border p-3 flex items-center justify-between"
+              style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+            >
+              <div>
+                <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                  {currentAppPin ? 'PIN is set' : 'No PIN set'}
+                </div>
+                <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  {currentAppPin
+                    ? 'A PIN is required to open the app'
+                    : 'Anyone can open the app without a PIN'}
+                </div>
+              </div>
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center"
+                style={{ backgroundColor: currentAppPin ? '#F0FAF0' : 'var(--bg-page)' }}
+              >
+                {currentAppPin ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4A9D5A" strokeWidth="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                  </svg>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setEditingAppPin(true)}
+                className="flex-1 py-2.5 rounded-lg text-sm font-medium border border-dashed cursor-pointer"
+                style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
+              >
+                {currentAppPin ? 'Change PIN' : 'Set PIN'}
+              </button>
+              {currentAppPin && (
+                <button
+                  onClick={async () => {
+                    if (!confirm('Remove the app PIN? Anyone will be able to open the app.')) return
+                    await removeAppPin.mutateAsync()
+                  }}
+                  disabled={removeAppPin.isPending}
+                  className="px-4 py-2.5 rounded-lg text-sm font-medium cursor-pointer disabled:opacity-50"
+                  style={{ color: '#E5534B' }}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </Section>
 
       {/* Categories */}
@@ -451,6 +603,111 @@ export default function Settings() {
         )}
       </Section>
 
+      {/* Family Feed */}
+      {babyProfile && (
+        <Section title="Family Feed">
+          <div className="space-y-3">
+            {/* PIN */}
+            <div
+              className="rounded-lg border p-3"
+              style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-medium mb-0.5" style={{ color: 'var(--text-muted)' }}>
+                    Family PIN
+                  </div>
+                  {editingPin ? (
+                    <div className="flex gap-2 mt-1">
+                      <input
+                        type="text"
+                        value={familyPin}
+                        onChange={(e) => setFamilyPin(e.target.value)}
+                        className="w-24 rounded-lg border p-1.5 text-sm text-center"
+                        style={{ backgroundColor: 'var(--input-bg)', borderColor: 'var(--border-card)', color: 'var(--text-primary)' }}
+                        autoFocus
+                      />
+                      <button
+                        onClick={async () => {
+                          if (familyPin.trim()) {
+                            await updateFamilyPin.mutateAsync({ id: babyProfile.id, family_pin: familyPin.trim() })
+                          }
+                          setEditingPin(false)
+                        }}
+                        className="px-3 py-1 rounded-lg text-xs font-medium text-white cursor-pointer"
+                        style={{ backgroundColor: 'var(--accent)' }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setEditingPin(false)}
+                        className="text-xs cursor-pointer"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-sm font-mono" style={{ color: 'var(--text-primary)' }}>
+                      {babyProfile.family_pin || '(not set)'}
+                    </div>
+                  )}
+                </div>
+                {!editingPin && (
+                  <button
+                    onClick={() => { setFamilyPin(babyProfile.family_pin ?? ''); setEditingPin(true) }}
+                    className="text-xs cursor-pointer"
+                    style={{ color: 'var(--accent)' }}
+                  >
+                    Edit
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Share link */}
+            <div
+              className="rounded-lg border p-3"
+              style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+            >
+              <div className="text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
+                Share Link
+              </div>
+              <div className="flex items-center gap-2">
+                <code className="text-xs flex-1 truncate" style={{ color: 'var(--text-secondary)' }}>
+                  {window.location.origin}/family
+                </code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${window.location.origin}/family`)
+                    setLinkCopied(true)
+                    setTimeout(() => setLinkCopied(false), 2000)
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer"
+                  style={{
+                    backgroundColor: linkCopied ? '#F0FAF0' : 'var(--accent)',
+                    color: linkCopied ? '#4A9D5A' : 'white',
+                  }}
+                >
+                  {linkCopied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+            </div>
+
+            {/* View feed */}
+            <a
+              href="/family"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full py-2.5 rounded-lg text-sm font-medium border border-dashed text-center cursor-pointer"
+              style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
+            >
+              View Family Feed
+            </a>
+          </div>
+        </Section>
+      )}
+
       {/* Import */}
       <Section title="Import Journal">
         <ImportJournal />
@@ -458,6 +715,143 @@ export default function Settings() {
 
       <Section title="Import Recipes">
         <ImportRecipes />
+      </Section>
+
+      {/* Backup & Restore */}
+      <Section title="Backup & Restore">
+        <div className="space-y-3">
+          {/* Last backup info */}
+          {backupSettings?.lastBackupDate && (
+            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+              Last backup: {format(new Date(backupSettings.lastBackupDate), 'MMM d, yyyy h:mm a')}
+            </div>
+          )}
+
+          {/* Estimate */}
+          {backupEstimate && !backingUp && (
+            <div
+              className="rounded-lg border p-3 text-xs"
+              style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)', color: 'var(--text-secondary)' }}
+            >
+              {backupEstimate.photoCount} photos · ~{backupEstimate.estimatedMB} MB estimated
+              {backupEstimate.estimatedMB > 500 && (
+                <div className="mt-1" style={{ color: '#D4A853' }}>
+                  Large backup — may use significant memory
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Progress */}
+          {backingUp && backupProgress && (
+            <div
+              className="rounded-lg border p-3"
+              style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+            >
+              <div className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
+                {backupProgress.phase}
+              </div>
+              {backupProgress.detail && (
+                <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  {backupProgress.detail}
+                </div>
+              )}
+              {backupProgress.total != null && backupProgress.current != null && (
+                <div className="mt-2 h-1.5 rounded-full" style={{ backgroundColor: 'var(--bg-page)' }}>
+                  <div
+                    className="h-full rounded-full transition-all duration-300"
+                    style={{
+                      width: `${(backupProgress.current / backupProgress.total) * 100}%`,
+                      backgroundColor: 'var(--accent)',
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Download button */}
+          <button
+            onClick={async () => {
+              if (backingUp) return
+              if (!backupEstimate) {
+                setEstimateLoading(true)
+                try {
+                  const est = await estimateBackupSize()
+                  setBackupEstimate(est)
+                } catch (err) {
+                  console.error('Failed to estimate:', err)
+                }
+                setEstimateLoading(false)
+                return
+              }
+              setBackingUp(true)
+              try {
+                await createFullBackup((p) => setBackupProgress(p))
+              } catch (err) {
+                console.error('Backup failed:', err)
+                alert('Backup failed. Please try again.')
+              }
+              setBackingUp(false)
+              setBackupProgress(null)
+              setBackupEstimate(null)
+            }}
+            disabled={backingUp || estimateLoading}
+            className="w-full py-2.5 rounded-lg text-sm font-medium text-white cursor-pointer disabled:opacity-50"
+            style={{ backgroundColor: 'var(--accent)' }}
+          >
+            {estimateLoading ? 'Checking size...' : backingUp ? 'Backing up...' : backupEstimate ? 'Download Full Backup' : 'Prepare Full Backup'}
+          </button>
+
+          {/* Reminder toggle */}
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Remind me to backup</span>
+            </div>
+            <button
+              onClick={async () => {
+                const newVal = !backupSettings?.reminderEnabled
+                await updateBackupReminder(newVal, backupSettings?.reminderFrequency ?? 'monthly')
+              }}
+              className="w-10 h-6 rounded-full relative cursor-pointer transition-colors duration-200"
+              style={{ backgroundColor: backupSettings?.reminderEnabled ? 'var(--accent)' : 'var(--border-card)' }}
+            >
+              <div
+                className="w-4 h-4 rounded-full bg-white absolute top-1 transition-all duration-200"
+                style={{ left: backupSettings?.reminderEnabled ? '22px' : '2px' }}
+              />
+            </button>
+          </div>
+
+          {/* Frequency selector */}
+          {backupSettings?.reminderEnabled && (
+            <div className="flex gap-2">
+              {(['monthly', 'weekly'] as const).map((freq) => (
+                <button
+                  key={freq}
+                  onClick={() => updateBackupReminder(true, freq)}
+                  className="flex-1 py-2 rounded-lg text-sm font-medium cursor-pointer capitalize"
+                  style={{
+                    backgroundColor: backupSettings.reminderFrequency === freq ? 'var(--accent)' : 'var(--bg-card)',
+                    color: backupSettings.reminderFrequency === freq ? 'white' : 'var(--text-secondary)',
+                    border: backupSettings.reminderFrequency === freq ? 'none' : '1px solid var(--border-card)',
+                  }}
+                >
+                  {freq}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Restore placeholder */}
+          <button
+            disabled
+            className="w-full py-2.5 rounded-lg text-sm font-medium border cursor-not-allowed opacity-40"
+            style={{ borderColor: 'var(--border-card)', color: 'var(--text-muted)' }}
+          >
+            Restore from Backup — Coming soon
+          </button>
+        </div>
       </Section>
 
       {/* Export */}

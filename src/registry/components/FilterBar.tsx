@@ -5,6 +5,7 @@ export interface Filters {
   where: Set<string>
   myPicksOnly: boolean
   hideMuted: boolean
+  showOnlySaved: boolean
 }
 
 interface Props {
@@ -30,6 +31,9 @@ export default function FilterBar({ filters, setFilters }: Props) {
   }
   function toggleHideMuted() {
     setFilters({ ...filters, hideMuted: !filters.hideMuted })
+  }
+  function toggleShowOnlySaved() {
+    setFilters({ ...filters, showOnlySaved: !filters.showOnlySaved })
   }
 
   return (
@@ -143,7 +147,48 @@ export default function FilterBar({ filters, setFilters }: Props) {
       >
         {filters.hideMuted ? '✓ Hiding muted' : 'Hide muted'}
       </button>
+
+      <button
+        onClick={toggleShowOnlySaved}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          background: filters.showOnlySaved ? 'var(--moss)' : 'transparent',
+          color: filters.showOnlySaved ? 'var(--cream)' : 'var(--moss)',
+          padding: '8px 14px',
+          borderRadius: 100,
+          border: `1px solid ${filters.showOnlySaved ? 'var(--moss)' : 'var(--sage)'}`,
+          fontFamily: 'Manrope',
+          fontSize: 11,
+          fontWeight: 600,
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
+          cursor: 'pointer',
+        }}
+      >
+        <BookmarkIcon />
+        {filters.showOnlySaved ? '✓ Only saved' : 'Only saved'}
+      </button>
     </div>
+  )
+}
+
+function BookmarkIcon() {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+    </svg>
   )
 }
 

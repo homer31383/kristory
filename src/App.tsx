@@ -39,6 +39,18 @@ function RequireUser({ children }: { children: React.ReactNode }) {
 }
 
 function AppRoutes() {
+  const isShowerDomain = window.location.hostname.endsWith('leahybernierbabyshower.com')
+
+  if (isShowerDomain) {
+    return (
+      <Routes>
+        <Route path="/shower" element={<BabyShower />} />
+        <Route path="/shower/m" element={<ShowerManage />} />
+        <Route path="*" element={<Navigate to="/shower" replace />} />
+      </Routes>
+    )
+  }
+
   return (
     <Routes>
       <Route path="/" element={<AppPinLock><UserPicker /></AppPinLock>} />

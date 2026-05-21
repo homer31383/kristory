@@ -4,6 +4,7 @@ import { format, parse, differenceInWeeks, differenceInDays, differenceInMonths 
 import { useEntriesByMonth, useCreateEntry } from '../hooks/useEntries'
 import { useBabyProfile } from '../hooks/useBaby'
 import { getTodayString, truncateText, getStorageUrl, formatDateHeading } from '../lib/helpers'
+import { useBackupSettings, isBackupOverdue } from '../hooks/useBackup'
 import type { JournalEntry, Trip } from '../types'
 
 type TimelineSegment =
@@ -376,23 +377,92 @@ function BabyCountdownWidget() {
 
   return (
     <div
-      className="rounded-xl p-3.5 mb-5 flex items-center gap-3"
+      className="rounded-xl p-3.5 mb-5"
       style={{ backgroundColor: '#FFF8E7', border: '1px solid #F0C987' }}
     >
-      <span className="text-xl">{emoji}</span>
-      <button
-        onClick={() => navigate('/baby')}
-        className="flex-1 text-left cursor-pointer"
+      <div className="flex items-center gap-3">
+        <span className="text-xl">{emoji}</span>
+        <button
+          onClick={() => navigate('/baby')}
+          className="flex-1 text-left cursor-pointer"
+        >
+          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{text}</span>
+        </button>
+        <button
+          onClick={() => { setHidden(true); localStorage.setItem(BABY_WIDGET_KEY, 'true') }}
+          className="w-6 h-6 flex items-center justify-center rounded-full text-xs cursor-pointer"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          ✕
+        </button>
+      </div>
+      <a
+        href="/family"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-xs font-medium mt-2 ml-9 inline-block"
+        style={{ color: 'var(--accent)', textDecoration: 'none' }}
       >
-        <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{text}</span>
-      </button>
-      <button
-        onClick={() => { setHidden(true); localStorage.setItem(BABY_WIDGET_KEY, 'true') }}
-        className="w-6 h-6 flex items-center justify-center rounded-full text-xs cursor-pointer"
-        style={{ color: 'var(--text-muted)' }}
-      >
-        ✕
-      </button>
+        View Family Feed →
+      </a>
+    </div>
+  )
+}
+
+const BACKUP_SNOOZE_KEY = 'kristory-backup-snoozed'
+
+function BackupReminderWidget() {
+  const navigate = useNavigate()
+  const { data: settings } = useBackupSettings()
+  const [snoozed, setSnoozed] = useState(() => {
+    const val = localStorage.getItem(BACKUP_SNOOZE_KEY)
+    if (!val) return false
+    // Snooze expires after 7 days
+    return Date.now() - parseInt(val) < 7 * 24 * 60 * 60 * 1000
+  })
+
+  if (!settings?.reminderEnabled || snoozed) return null
+
+  const { overdue, daysSince } = isBackupOverdue(
+    settings.lastBackupDate,
+    settings.reminderFrequency,
+  )
+  if (!overdue) return null
+
+  const message = daysSince < 0
+    ? "You haven't backed up yet"
+    : `It's been ${daysSince} days since your last backup`
+
+  return (
+    <div
+      className="rounded-xl p-3.5 mb-4 flex items-center gap-3"
+      style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-card)' }}
+    >
+      <span className="text-lg">💾</span>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+          {message}
+        </div>
+        <div className="flex gap-2 mt-1.5">
+          <button
+            onClick={() => navigate('/settings')}
+            className="text-xs font-medium px-2.5 py-1 rounded-lg cursor-pointer"
+            style={{ backgroundColor: 'var(--accent)', color: 'white' }}
+          >
+            Back Up Now
+          </button>
+          <button
+            onClick={() => {
+              localStorage.setItem(BACKUP_SNOOZE_KEY, String(Date.now()))
+              setSnoozed(true)
+            }}
+            className="text-xs font-medium cursor-pointer"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -499,6 +569,7 @@ export default function Journal() {
     <div className="pb-4">
       {/* Baby Countdown Widget */}
       <BabyCountdownWidget />
+      <BackupReminderWidget />
 
       {/* Today Section */}
       <div className="mb-8">
