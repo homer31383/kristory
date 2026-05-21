@@ -12,6 +12,19 @@ import AddItemSheet from '../components/AddItemSheet'
 import BottomSheet from '../components/ui/BottomSheet'
 import type { EntrySection } from '../types'
 
+/** Returns the first image file found in a paste event's clipboard, or null. */
+function getImageFromClipboard(e: ClipboardEvent): File | null {
+  const items = e.clipboardData?.items
+  if (!items) return null
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      return item.getAsFile()
+    }
+  }
+  return null
+}
+
 export default function EntryDetail() {
   const { date } = useParams<{ date: string }>()
   const navigate = useNavigate()
@@ -38,6 +51,7 @@ export default function EntryDetail() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [showAddItem, setShowAddItem] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [pastingPhoto, setPastingPhoto] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [lightboxPhoto, setLightboxPhoto] = useState<string | null>(null)
   const [editingPhotos, setEditingPhotos] = useState(false)
@@ -55,6 +69,7 @@ export default function EntryDetail() {
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const entryIdRef = useRef<string | null>(null)
+  const pastingRef = useRef(false)
 
   const today = getTodayString()
 
@@ -164,6 +179,47 @@ export default function EntryDetail() {
     setUploadingPhoto(false)
     e.target.value = ''
   }
+
+  const pasteImage = useCallback(
+    async (file: File) => {
+      if (pastingRef.current) return
+      if (!user) {
+        setPhotoError('Not signed in. Please reload and try again.')
+        return
+      }
+      if (!date) return
+
+      pastingRef.current = true
+      setPastingPhoto(true)
+      setPhotoError(null)
+      try {
+        const entryId = await ensureEntry()
+        const blob = await resizeImage(file)
+        await uploadPhoto.mutateAsync({ entryId, entryDate: date, userId: user.id, blob })
+      } catch (err) {
+        console.error('[PhotoPaste] FAILED:', err)
+        setPhotoError(err instanceof Error ? err.message : 'Paste failed')
+      } finally {
+        pastingRef.current = false
+        setPastingPhoto(false)
+      }
+    },
+    [user, date, ensureEntry, uploadPhoto]
+  )
+
+  // Paste an image from the clipboard (e.g. copied from Google Photos) straight
+  // into the entry's photos. Capture phase so it runs before the rich-text
+  // editor; only acts when the clipboard actually holds an image.
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const file = getImageFromClipboard(e)
+      if (!file) return
+      e.preventDefault()
+      void pasteImage(file)
+    }
+    document.addEventListener('paste', handlePaste, true)
+    return () => document.removeEventListener('paste', handlePaste, true)
+  }, [pasteImage])
 
   const handleDeletePhoto = async (photoId: string, storagePath: string) => {
     if (!date) return
@@ -1027,6 +1083,20 @@ export default function EntryDetail() {
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {/* Pasting photo indicator */}
+      {pastingPhoto && (
+        <div
+          className="fixed left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2.5 rounded-lg shadow-lg z-50"
+          style={{ bottom: 88, backgroundColor: 'var(--text-primary)', color: 'var(--bg-card)' }}
+        >
+          <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.3" strokeWidth="3" />
+            <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+          </svg>
+          <span className="text-sm font-medium">Pasting photo…</span>
         </div>
       )}
     </div>
