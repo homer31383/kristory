@@ -1,0 +1,361 @@
+# THE KRISTORY — COMPLETE REBUILD PROMPT
+# ============================================================
+# Use this prompt with Claude Code to rebuild the entire app
+# from scratch. Run the SQL migration FIRST (Section A), then
+# paste Section B into Claude Code.
+# ============================================================
+
+
+# ============================================================
+# SECTION A: DATABASE MIGRATION
+# Run this ENTIRE block in Supabase SQL Editor BEFORE building
+# ============================================================
+
+/*
+PREREQUISITES:
+1. A Supabase project. If starting fresh, create the users table first:
+
+   CREATE TABLE IF NOT EXISTS users (
+     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     name TEXT NOT NULL,
+     created_at TIMESTAMPTZ DEFAULT now()
+   );
+   INSERT INTO users (id, name) VALUES
+     ('9df51388-65e8-44bf-bfad-65729744190b', 'Chris'),
+     ('cab9d09c-0083-4ce1-aaf5-9a045d8a4315', 'Krista');
+
+2. Create a Storage bucket called "kristory-photos" with public access
+3. Run ALL the SQL below
+*/
+
+-- JOURNAL
+CREATE TABLE journal_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  entry_date DATE UNIQUE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE journal_entries DISABLE ROW LEVEL SECURITY;
+
+CREATE TABLE entry_sections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  entry_id UUID REFERENCES journal_entries(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id),
+  content TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (entry_id, user_id)
+);
+ALTER TABLE entry_sections DISABLE ROW LEVEL SECURITY;
+ALTER TABLE entry_sections ADD COLUMN fts TSVECTOR
+  GENERATED ALWAYS AS (to_tsvector('english', coalesce(content, ''))) STORED;
+CREATE INDEX idx_entry_sections_fts ON entry_sections USING GIN (fts);
+
+CREATE TABLE entry_photos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  entry_id UUID REFERENCES journal_entries(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id),
+  storage_path TEXT NOT NULL,
+  display_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE entry_photos DISABLE ROW LEVEL SECURITY;
+
+-- CATEGORIES
+CREATE TABLE categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  emoji TEXT,
+  is_default BOOLEAN DEFAULT false,
+  user_id UUID REFERENCES users(id) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE categories DISABLE ROW LEVEL SECURITY;
+
+INSERT INTO categories (name, emoji, is_default, user_id) VALUES
+  ('Movies', '🎬', true, '9df51388-65e8-44bf-bfad-65729744190b'),
+  ('TV Shows', '📺', true, '9df51388-65e8-44bf-bfad-65729744190b'),
+  ('Restaurants', '🍽', true, '9df51388-65e8-44bf-bfad-65729744190b'),
+  ('Home Cooking', '🍳', true, '9df51388-65e8-44bf-bfad-65729744190b'),
+  ('Activities', '🎭', true, '9df51388-65e8-44bf-bfad-65729744190b'),
+  ('Books', '📖', true, '9df51388-65e8-44bf-bfad-65729744190b'),
+  ('Trips', '✈️', true, '9df51388-65e8-44bf-bfad-65729744190b'),
+  ('Music/Concerts', '🎵', true, '9df51388-65e8-44bf-bfad-65729744190b'),
+  ('Shopping', '🛒', true, '9df51388-65e8-44bf-bfad-65729744190b'),
+  ('Baby', '👶', true, '9df51388-65e8-44bf-bfad-65729744190b');
+
+-- TAGGED ITEMS
+CREATE TABLE tagged_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  entry_id UUID REFERENCES journal_entries(id) ON DELETE CASCADE,
+  category_id UUID REFERENCES categories(id),
+  user_id UUID REFERENCES users(id),
+  name TEXT NOT NULL,
+  rating INTEGER CHECK (rating >= 1 AND rating <= 5),
+  location_name TEXT,
+  location_lat DECIMAL,
+  location_lng DECIMAL,
+  location_place_id TEXT,
+  ingredients TEXT,
+  instructions TEXT,
+  item_date DATE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE tagged_items DISABLE ROW LEVEL SECURITY;
+CREATE INDEX idx_tagged_items_name ON tagged_items USING GIN (to_tsvector('english', name));
+
+-- RECIPE TAGS
+CREATE TABLE recipe_tags (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  emoji TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE recipe_tags DISABLE ROW LEVEL SECURITY;
+INSERT INTO recipe_tags (name, emoji) VALUES
+  ('Pasta', '🍝'), ('Salad', '🥗'), ('Soup', '🍲'),
+  ('Sauce', '🫙'), ('Sandwich', '🥪'), ('Protein', '🍗'),
+  ('Baking', '🍞'), ('Sweets', '🍪'), ('Pancakes', '🥞'),
+  ('Cookies', '🍪'), ('Sides', '🥦'), ('Breakfast', '🍳');
+
+CREATE TABLE tagged_item_recipe_tags (
+  tagged_item_id UUID REFERENCES tagged_items(id) ON DELETE CASCADE,
+  recipe_tag_id UUID REFERENCES recipe_tags(id) ON DELETE CASCADE,
+  PRIMARY KEY (tagged_item_id, recipe_tag_id)
+);
+ALTER TABLE tagged_item_recipe_tags DISABLE ROW LEVEL SECURITY;
+
+-- PARTICIPANTS
+CREATE TABLE tagged_item_participants (
+  tagged_item_id UUID REFERENCES tagged_items(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (tagged_item_id, user_id)
+);
+ALTER TABLE tagged_item_participants DISABLE ROW LEVEL SECURITY;
+
+-- TRIPS
+CREATE TABLE trips (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  summary TEXT,
+  cover_photo_path TEXT,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE trips DISABLE ROW LEVEL SECURITY;
+
+CREATE TABLE trip_entries (
+  trip_id UUID REFERENCES trips(id) ON DELETE CASCADE,
+  entry_id UUID REFERENCES journal_entries(id) ON DELETE CASCADE,
+  PRIMARY KEY (trip_id, entry_id)
+);
+ALTER TABLE trip_entries DISABLE ROW LEVEL SECURITY;
+
+-- BABY
+CREATE TABLE baby_milestones (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  entry_id UUID REFERENCES journal_entries(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  milestone_type TEXT NOT NULL DEFAULT 'custom',
+  milestone_date DATE NOT NULL,
+  notes TEXT,
+  photo_path TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE baby_milestones DISABLE ROW LEVEL SECURITY;
+
+CREATE TABLE baby_profile (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT DEFAULT 'Baby',
+  due_date DATE,
+  birth_date DATE,
+  birth_weight TEXT,
+  birth_length TEXT,
+  notes TEXT,
+  family_pin TEXT DEFAULT '2026',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE baby_profile DISABLE ROW LEVEL SECURITY;
+INSERT INTO baby_profile (name, due_date) VALUES ('Baby', '2026-10-02');
+
+CREATE TABLE baby_name_suggestions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  suggested_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE baby_name_suggestions DISABLE ROW LEVEL SECURITY;
+
+-- FAMILY FEED
+CREATE TABLE family_posts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  entry_id UUID REFERENCES journal_entries(id) ON DELETE CASCADE,
+  caption TEXT,
+  published_at TIMESTAMPTZ DEFAULT now(),
+  user_id UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE family_posts DISABLE ROW LEVEL SECURITY;
+
+CREATE TABLE family_post_photos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  family_post_id UUID REFERENCES family_posts(id) ON DELETE CASCADE,
+  entry_photo_id UUID REFERENCES entry_photos(id) ON DELETE CASCADE,
+  display_order INTEGER DEFAULT 0
+);
+ALTER TABLE family_post_photos DISABLE ROW LEVEL SECURITY;
+
+-- APP SETTINGS
+CREATE TABLE app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE app_settings DISABLE ROW LEVEL SECURITY;
+
+-- STORAGE POLICIES
+CREATE POLICY "Allow public uploads" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'kristory-photos');
+CREATE POLICY "Allow public reads" ON storage.objects
+  FOR SELECT USING (bucket_id = 'kristory-photos');
+CREATE POLICY "Allow public updates" ON storage.objects
+  FOR UPDATE USING (bucket_id = 'kristory-photos');
+CREATE POLICY "Allow public deletes" ON storage.objects
+  FOR DELETE USING (bucket_id = 'kristory-photos');
+
+
+# ============================================================
+# SECTION B: CLAUDE CODE BUILD PROMPT
+# Paste everything below this line into Claude Code
+# ============================================================
+
+Build a shared daily journal PWA called "The Kristory" for two users (Chris and Krista). This is a complete rebuild from scratch.
+
+## Stack
+Vite + React + TypeScript + Tailwind CSS + Supabase + Vercel. PWA via vite-plugin-pwa.
+
+## Environment
+Existing Supabase project with all tables already created. Env vars: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY.
+
+## CRITICAL TECHNICAL RULES
+
+1. **FK Hints on ALL Supabase nested queries.** Every .select() joining tables MUST use !foreign_key syntax:
+   .select('*, sections:entry_sections!entry_id(*), photos:entry_photos!entry_id(*)')
+   Without hints, PostgREST returns 400. This is the #1 bug source.
+
+2. **Optimistic UI everywhere.** Update cache immediately, sync in background. Show "Saving..." / "Saved".
+
+3. **Mobile-first.** 375px first. 44px tap targets. Bottom nav with safe area padding.
+
+4. **Photo resize:** 1600px max, JPEG 85%, canvas-based, Math.round() dimensions, revoke object URLs.
+
+5. **Auto-save:** 1.5s debounce on journal editing.
+
+6. **PWA: skipWaiting + clientsClaim** for immediate updates.
+
+## Users (pre-existing)
+Chris: 9df51388-65e8-44bf-bfad-65729744190b
+Krista: cab9d09c-0083-4ce1-aaf5-9a045d8a4315
+
+No auth. User picker on every launch. App PIN lock (optional, stored in app_settings, checked once per session via sessionStorage).
+
+## Design System
+
+Light: bg #EDE6DE, cards #F7F3EF, borders #DDD5CB, text #2C2522, secondary #8C8078, muted #B5ADA5, accent #6B5CA5, hover #5A4B94, Chris #6B5CA5, Krista #D4708F.
+Dark: bg #141414, cards #1E1E1E, borders #2A2A2A, text #E8E0D8, accent #8B7EC8, Chris #8B7EC8, Krista #E88BA8.
+Baby accents: #FFF8E7 yellow, #F0FAF0 mint.
+
+Typography: Playfair Display 700 for headings, Inter 400/500/600 for body. Google Fonts.
+Spacing: 16px mobile, 24px desktop. Cards 12px radius. Subtle shadows. Frosted glass bottom nav.
+
+## Navigation
+Mobile bottom tabs: Journal, Explore, Lists, On This Day. Desktop: sidebar. Settings via gear icon.
+
+## Feature 1: Journal Tab
+- Today's entry with write button
+- Baby countdown widget (weeks to due date or age, dismissible, links to /baby)
+- "View Family Feed" link near countdown
+- Backup reminder when overdue
+- Timeline: collapsible years (current expanded) and months, newest first
+- Trip grouping under collapsible trip headers
+- Entry cards: date, text preview, photo thumb, tag pills, trip badge
+- Infinite scroll, date picker for past dates
+
+## Feature 2: Entry Detail
+- Dual-author sections with colored left borders (Chris purple, Krista pink)
+- Tiptap editor (bold, italic, hard break), auto-save 1.5s
+- Photo gallery with edit mode toggle for safe deletion
+- Fullscreen photo viewer: swipe, pinch-to-zoom, double-tap, swipe-down dismiss
+- Tagged items, "Add Milestone" quick action, trip badge + "Add to Trip"
+- "Share to Family" toggle: expands panel with editable caption (pre-filled from journal text, stripped HTML), photo selector grid with checkboxes. Creates/updates family_posts. published_at should use the journal entry's entry_date, not now().
+
+## Feature 3: Explore
+Full-text search, date/category/rating filters, category grid browse.
+
+## Feature 4: Lists
+- Trips section: cards, "Create Trip", suggested trips (auto-detect from consecutive entries with shared locations/keywords/batch imports, show entry previews, create or dismiss)
+- Baby card (yellow accent, countdown subtitle)
+- Category grid with standalone "+ Add [Item]", participant tagging (who did it), item_date
+
+## Feature 5: Home Cooking / The Untitled Book of Food
+- Enhanced view with recipe tag filter pills (wrap on desktop)
+- Recipe detail: ingredients, instructions, recipe tags (multi-tag)
+- "What should we make?": suggest 1, plan 5, ingredient search, random — all client-side
+- Import from text file with keyword auto-tagging (word boundaries, name-only for Protein/Sauce/Sandwich/Baking/Sweets)
+
+## Feature 6: Trips
+- Create: title, date range, entry checkboxes, cover photo from entries, summary
+- Detail: hero cover + gradient, stats, mini-timeline, all photos grid, tagged items
+- Edit all fields, delete (keeps entries)
+- Timeline grouping, "Add to Trip" from entries
+
+## Feature 7: Baby Milestones
+- Profile: name, due date (Oct 2, 2026), birth date, weight, length
+- Baby view (/baby) with Timeline, Milestones, Firsts tabs
+- Pregnancy (7) + first year (10) + custom milestones
+- Visual checklist, link milestones to entries
+- Baby timeline: tagged entries + milestones chronologically
+- "Book of Firsts" keepsake grid
+- Family feed link + "Share with Family" button (SMS/email/copy/native share)
+- Milestone completion prompts "Share with family?"
+- Settings: edit profile, toggle countdown
+
+## Feature 8: Family Feed ("The Babory")
+- Route: /family, outside app PIN wrapper, has own PIN gate (baby_profile.family_pin)
+- PIN screen: "The Babory" in Playfair Display, baby name subtitle, localStorage persistence
+- Feed matches Kristory design: #EDE6DE background, Playfair headings, cream cards
+- Timeline layout: collapsible years/months, newest first
+- Post cards: date, photo thumbnail, caption preview, milestone badge
+- Post detail: full-width stacked photos, full caption, date, back button
+- Baby name suggestions: tab with simple add form (name + optional "suggested by"), list display
+- Read-only, no comments/reactions
+- Max content width 540px centered
+
+## Feature 9: On This Day
+Memories from this date in past years. Entry cards with text, photos, tags. Nearby dates fallback.
+
+## Feature 10: Settings
+- Dark mode (Light/Dark/System)
+- App PIN (set/change/remove, sessionStorage gated)
+- Manage categories
+- Import Journal (Google Doc text parser, flexible date formats)
+- Import Recipes (Book of Food text parser with auto-tagging)
+- Baby Profile editor + countdown toggle
+- Family Feed: PIN management, copy link, view feed
+- Backup & Restore: full ZIP export (data.json + photos/ + README.txt + REBUILD-GUIDE.txt), JSZip library, progress indicator, monthly reminder on Journal home, last backup date tracking
+- Check for Updates (service worker refresh)
+- About
+
+## Key Dependencies
+@supabase/supabase-js ^2, @tanstack/react-query ^5, react-router-dom ^6, date-fns ^3, vite-plugin-pwa ^0.20, @tiptap/react ^2, @tiptap/starter-kit ^2, jszip ^3
+
+## PWA
+Name: "The Kristory", short_name: "Kristory", theme_color: #6B5CA5, bg: #EDE6DE, standalone. Cache Google Fonts. skipWaiting + clientsClaim. Maskable icons with "purpose": "maskable".
+
+## Icons
+Purple (#6B5CA5) Lora serif "K" on cream (#F7F3EF), rounded corners, subtle border. Sizes: 192, 512, maskable 192, maskable 512, favicon 32.
+
+Build the whole thing. Don't stop and ask questions — make reasonable decisions and keep going.

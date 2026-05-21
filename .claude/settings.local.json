@@ -10,7 +10,22 @@
       "Bash(npm run:*)",
       "Bash(test:*)",
       "Bash(vercel:*)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(gh repo:*)",
+      "Bash(where:*)",
+      "Bash(winget install:*)",
+      "Bash(cmd.exe:*)",
+      "Bash(\"/c/Program:*)",
+      "Bash(/c/Users/chris/gh/gh.exe auth:*)",
+      "Bash(git config:*)",
+      "Bash(npm ls:*)",
+      "Read(//d/AI/Claude/BabyRegistryExtension/supabase-migrations/**)",
+      "Skill(claude-api)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(echo \"ESLINT EXIT: $?\")",
+      "Bash(git stash *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
     ]
   }
 }
