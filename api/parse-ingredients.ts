@@ -103,12 +103,11 @@ function extractIngredients(text: string): ParsedIngredient[] {
   return result
 }
 
-export default async function handler(req: Request): Promise<Response> {
+// Exported as a named HTTP method (not `export default`) so Vercel uses the
+// Web fetch-style signature — `export default` is the legacy (req, res) form,
+// where a returned Response is ignored and the function hangs until timeout.
+export async function POST(req: Request): Promise<Response> {
   console.log('Function called, API key exists:', !!process.env.ANTHROPIC_API_KEY)
-
-  if (req.method !== 'POST') {
-    return jsonResponse({ error: 'Method not allowed.' }, 405)
-  }
 
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
