@@ -10,8 +10,8 @@ import Anthropic from '@anthropic-ai/sdk'
  */
 
 // A Claude parse call plus the SDK's automatic retries can exceed Vercel's
-// 10s default function timeout. Give it more headroom.
-export const maxDuration = 30
+// 10s default function timeout. Give it generous headroom.
+export const maxDuration = 60
 
 // Fallback list, used only if the client doesn't send the live category names.
 const DEFAULT_CATEGORIES = [
@@ -104,6 +104,8 @@ function extractIngredients(text: string): ParsedIngredient[] {
 }
 
 export default async function handler(req: Request): Promise<Response> {
+  console.log('Function called, API key exists:', !!process.env.ANTHROPIC_API_KEY)
+
   if (req.method !== 'POST') {
     return jsonResponse({ error: 'Method not allowed.' }, 405)
   }
