@@ -183,6 +183,53 @@ export default function Registry() {
   )
 
   /**
+   * Per-section URLs to open in batch via the "Open N picked" header button.
+   * Restricted to the current user's picks (each person transfers their own)
+   * and to picks not yet marked transferred (no point re-opening a tab for
+   * something already on Babylist). Picks without a URL are skipped.
+   */
+  const sectionPickedUrls = useMemo(() => {
+    const m = new Map<string, string[]>()
+    if (!personId) return m
+    const catalogById = new Map(data.catalog.map((c) => [c.id, c]))
+    for (const p of data.picks) {
+      if (p.person_id !== personId) continue
+      if (p.transferred_at !== null) continue
+      let url: string | null = null
+      let section: string | null = null
+      if (p.catalog_tier_id) {
+        const tier = tierMap.get(p.catalog_tier_id)
+        if (tier) {
+          url = tier.url
+          section = catalogById.get(tier.catalog_item_id)?.section ?? null
+        }
+      } else if (p.custom_item_id) {
+        const c = customMap.get(p.custom_item_id)
+        if (c) {
+          url = c.url
+          section = c.section
+        }
+      } else if (p.alternative_id) {
+        const a = altMap.get(p.alternative_id)
+        if (a) {
+          url = a.url
+          if (a.catalog_item_id) {
+            section = catalogById.get(a.catalog_item_id)?.section ?? null
+          } else if (a.custom_item_id) {
+            section = customMap.get(a.custom_item_id)?.section ?? null
+          }
+        }
+      }
+      if (url && section) {
+        const list = m.get(section)
+        if (list) list.push(url)
+        else m.set(section, [url])
+      }
+    }
+    return m
+  }, [data.picks, data.catalog, customMap, altMap, tierMap, personId])
+
+  /**
    * Dashboard totals exclude muted items (per spec). Saved-for-later items
    * count normally. We pass stateByItem so the helper can look up the parent
    * item of each tier/custom/alt.
@@ -610,6 +657,7 @@ export default function Registry() {
                 visible={items.length}
                 total={totalsForSec.total}
                 picked={totalsForSec.picked}
+                pickedUrls={sectionPickedUrls.get(section) ?? []}
                 collapsed={isCollapsed}
                 isRemoteSectionChange={isRemoteSectionChange}
                 onToggleCollapsed={() => handleToggleSection(section)}
@@ -770,6 +818,7 @@ function SectionBlock({
   visible,
   total,
   picked,
+  pickedUrls,
   collapsed,
   isRemoteSectionChange,
   onToggleCollapsed,
@@ -781,6 +830,9 @@ function SectionBlock({
   visible: number
   total: number
   picked: number
+  /** Untransferred URLs for the current user's picks in this section.
+   *  Drives the "Open N picked" header button. */
+  pickedUrls: string[]
   collapsed: boolean
   isRemoteSectionChange: boolean
   onToggleCollapsed: () => void
@@ -881,6 +933,35 @@ function SectionBlock({
             </span>
           )}
         </span>
+
+        {pickedUrls.length > 0 && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              pickedUrls.forEach((u) => window.open(u, '_blank', 'noopener,noreferrer'))
+            }}
+            title="Open your untransferred picks in this section in new tabs"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              marginLeft: 12,
+              fontFamily: 'Manrope',
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              color: 'var(--moss)',
+              background: 'transparent',
+              cursor: 'pointer',
+              padding: '4px 10px',
+              border: '1px solid var(--sage)',
+              borderRadius: 100,
+            }}
+          >
+            Open {pickedUrls.length} picked ↗
+          </button>
+        )}
       </div>
 
       <div
