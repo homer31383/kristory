@@ -184,9 +184,11 @@ export default function Registry() {
 
   /**
    * Per-section URLs to open in batch via the "Open N picked" header button.
-   * Restricted to the current user's picks (each person transfers their own)
-   * and to picks not yet marked transferred (no point re-opening a tab for
-   * something already on Babylist). Picks without a URL are skipped.
+   * Restricted to the current user's picks (each person transfers their own).
+   * Picks without a URL are skipped. Transfer state is intentionally NOT a
+   * filter here — the per-pick transferred-tracking feature is separate, and
+   * its column may not exist in the deployed DB yet, which would silently
+   * drop every pick if we filtered on it.
    */
   const sectionPickedUrls = useMemo(() => {
     const m = new Map<string, string[]>()
@@ -194,7 +196,6 @@ export default function Registry() {
     const catalogById = new Map(data.catalog.map((c) => [c.id, c]))
     for (const p of data.picks) {
       if (p.person_id !== personId) continue
-      if (p.transferred_at !== null) continue
       let url: string | null = null
       let section: string | null = null
       if (p.catalog_tier_id) {
