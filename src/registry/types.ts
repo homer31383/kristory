@@ -110,6 +110,10 @@ export interface Pick {
   alternative_id: string | null
   qty: number
   picked_at: string
+  /** Set when this pick has been moved to Babylist.com. NULL = not yet. */
+  transferred_at: string | null
+  /** Which babylist_people row marked it transferred (NULL when not transferred). */
+  transferred_by: string | null
 }
 
 export type ItemStateValue = 'active' | 'muted' | 'saved'

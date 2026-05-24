@@ -9,8 +9,11 @@ export type DisplayTier =
 interface Props {
   display: DisplayTier
   parentItemName: string
-  pickedBy: { person: BabylistPerson; pickId: string; qty: number }[]
+  pickedBy: { person: BabylistPerson; pickId: string; qty: number; transferred: boolean }[]
   myPickId: string | null
+  /** True when the CURRENT user's own pick on this tier has been transferred
+   *  to Babylist. Drives the "On Babylist" toggle's appearance. */
+  myPickTransferred: boolean
   myQty: number
   defaultQty: number
   remotePickIds: Set<string>
@@ -18,6 +21,9 @@ interface Props {
   clearRemote: (id: string) => void
   onTogglePick: () => void
   onChangeQty: (qty: number) => void
+  /** Toggle the transfer state of the current user's pick on this tier.
+   *  Provided only when the user has actually picked this tier. */
+  onSetMyPickTransferred?: (transferred: boolean) => void
   onEditAlternative?: () => void
   onDeleteAlternative?: () => void
   /** Open the catalog-edit modal for this tier. Provided only for real
@@ -31,10 +37,12 @@ export default function TierCard(props: Props) {
     parentItemName,
     pickedBy,
     myPickId,
+    myPickTransferred,
     myQty,
     defaultQty,
     onTogglePick,
     onChangeQty,
+    onSetMyPickTransferred,
     remotePickIds,
     removingPickIds,
     clearRemote,
@@ -285,8 +293,59 @@ export default function TierCard(props: Props) {
         {isPicked ? '✓ Picked by you' : pickedBy.length > 0 ? 'Pick this too' : 'Pick this'}
       </button>
 
+      {isPicked && onSetMyPickTransferred && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onSetMyPickTransferred(!myPickTransferred)
+          }}
+          title={
+            myPickTransferred
+              ? 'Click to mark not yet on Babylist'
+              : 'Click after adding this pick to Babylist.com'
+          }
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            marginLeft: 10,
+            background: 'transparent',
+            border: 'none',
+            color: myPickTransferred ? 'var(--moss)' : 'var(--ink-faint)',
+            padding: '6px 4px',
+            fontFamily: 'Manrope',
+            fontSize: 10,
+            fontWeight: 600,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+          }}
+        >
+          {myPickTransferred && (
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <polyline points="4 12 9 17 20 6" />
+            </svg>
+          )}
+          {myPickTransferred ? 'On Babylist' : 'Mark on Babylist'}
+        </button>
+      )}
+
       <PickBadges
-        pickedBy={pickedBy.map(({ person, pickId }) => ({ person, pickId }))}
+        pickedBy={pickedBy.map(({ person, pickId, transferred }) => ({
+          person,
+          pickId,
+          transferred,
+        }))}
         remotePickIds={remotePickIds}
         removingPickIds={removingPickIds}
         clearRemote={clearRemote}

@@ -23,6 +23,7 @@ import {
   loadCustomItems,
   loadPeople,
   loadPicks,
+  setPickTransferred,
   upsertCatalogTierOverride,
   upsertItemState,
   type ItemWithTiers,
@@ -230,12 +231,15 @@ export async function importCsv(
         altCount++
       }
       if (!existingAltPicks.has(alt.id)) {
-        await addPick(
+        const newPick = await addPick(
           registryId,
           person.id,
           { kind: 'alternative', alternative_id: alt.id },
           row.qty || 1,
         )
+        if (row.transferred) {
+          await setPickTransferred(newPick.id, person.id)
+        }
         existingAltPicks.add(alt.id)
         pickCount++
       }
@@ -250,23 +254,29 @@ export async function importCsv(
           // override so the imported view matches.
           await maybeApplyCatalogOverride(ti, row)
           if (!existingTierPicks.has(ti.id)) {
-            await addPick(
+            const newPick = await addPick(
               registryId,
               person.id,
               { kind: 'tier', catalog_tier_id: ti.id },
               row.qty || 1,
             )
+            if (row.transferred) {
+              await setPickTransferred(newPick.id, person.id)
+            }
             existingTierPicks.add(ti.id)
             pickCount++
           }
         }
       } else if (parentCustomId && !existingCustomPicks.has(parentCustomId)) {
-        await addPick(
+        const newPick = await addPick(
           registryId,
           person.id,
           { kind: 'custom', custom_item_id: parentCustomId },
           row.qty || 1,
         )
+        if (row.transferred) {
+          await setPickTransferred(newPick.id, person.id)
+        }
         existingCustomPicks.add(parentCustomId)
         pickCount++
       }

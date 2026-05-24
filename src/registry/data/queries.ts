@@ -413,6 +413,23 @@ export async function deletePick(pickId: string): Promise<void> {
   if (error) throw error
 }
 
+/**
+ * Mark a pick as transferred to Babylist (`transferredBy = personId`) or
+ * unmark it (`transferredBy = null`). The UPDATE flows through the existing
+ * babylist_picks realtime subscription, so the other user sees the moss check
+ * appear/disappear live with no extra wiring.
+ */
+export async function setPickTransferred(
+  pickId: string,
+  transferredBy: string | null,
+): Promise<void> {
+  const update = transferredBy
+    ? { transferred_at: new Date().toISOString(), transferred_by: transferredBy }
+    : { transferred_at: null, transferred_by: null }
+  const { error } = await supabase.from('babylist_picks').update(update).eq('id', pickId)
+  if (error) throw error
+}
+
 // ─── Chrome extension pairing ───────────────────────────────────────────────
 
 /**

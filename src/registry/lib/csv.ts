@@ -31,6 +31,9 @@ export interface ParsedCsvRow {
   totalCost: string
   note: string
   link: string
+  /** True when the original CSV had `Transferred=yes`. Older exports without
+   *  the column default to false. */
+  transferred: boolean
 }
 
 export function parseCsv(text: string): ParsedCsvRow[] {
@@ -65,6 +68,7 @@ function normalizeRow(r: Record<string, string>): ParsedCsvRow {
     totalCost: get('Total Cost'),
     note: get('Notes'),
     link: get('Link'),
+    transferred: get('Transferred').toLowerCase() === 'yes',
   }
 }
 
@@ -95,6 +99,7 @@ export function buildCsv(ctx: ExportContext): string {
     'Total Cost',
     'Notes',
     'Link',
+    'Transferred',
   ]
   const tierMap = new Map(ctx.catalogTiers.map((t) => [t.id, t]))
   const itemMap = new Map(ctx.catalogItems.map((i) => [i.id, i]))
@@ -202,6 +207,7 @@ export function buildCsv(ctx: ExportContext): string {
       totalCost,
       note,
       url,
+      pick.transferred_at ? 'yes' : 'no',
     ])
   }
 

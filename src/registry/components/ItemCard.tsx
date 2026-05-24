@@ -49,6 +49,8 @@ interface Props {
   onTogglePickCustom: (customItemId: string) => void
   onTogglePickAlternative: (altId: string) => void
   onChangePickQty: (pickId: string, qty: number) => void
+  /** Toggle the transfer-to-Babylist state of a specific pick. */
+  onSetPickTransferred: (pickId: string, transferred: boolean) => void
   onChangeItemState: (next: ItemStateValue) => void
   /** Open the custom-item edit modal. Provided only for custom items. */
   onEditCustom?: () => void
@@ -78,6 +80,7 @@ export default function ItemCard(props: Props) {
     onTogglePickCustom,
     onTogglePickAlternative,
     onChangePickQty,
+    onSetPickTransferred,
     onChangeItemState,
     onEditCustom,
     onDeleteCustom,
@@ -199,13 +202,26 @@ export default function ItemCard(props: Props) {
       .map((p) => {
         const person = personMap.get(p.person_id)
         if (!person) return null
-        return { person, pickId: p.id, qty: p.qty }
+        return {
+          person,
+          pickId: p.id,
+          qty: p.qty,
+          transferred: p.transferred_at !== null,
+        }
       })
       .filter(
-        (x): x is { person: BabylistPerson; pickId: string; qty: number } => x !== null,
+        (
+          x,
+        ): x is {
+          person: BabylistPerson
+          pickId: string
+          qty: number
+          transferred: boolean
+        } => x !== null,
       )
     const myPick = relevantPicks.find((p) => p.person_id === myPersonId)
-    return { pickedBy, myPick }
+    const myPickTransferred = !!myPick?.transferred_at
+    return { pickedBy, myPick, myPickTransferred }
   }
 
   const allUrls = tierDisplays.flatMap(({ display: d }) => {
@@ -441,11 +457,17 @@ export default function ItemCard(props: Props) {
                 parentItemName={itemName}
                 pickedBy={info.pickedBy}
                 myPickId={info.myPick?.id ?? null}
+                myPickTransferred={info.myPickTransferred}
                 myQty={myQty}
                 defaultQty={defaultQty}
                 remotePickIds={remotePickIds}
                 removingPickIds={removingPickIds}
                 clearRemote={(id) => clearRemote('pick', id)}
+                onSetMyPickTransferred={
+                  info.myPick
+                    ? (t) => onSetPickTransferred(info.myPick!.id, t)
+                    : undefined
+                }
                 onTogglePick={() => {
                   if (!myPersonId) return
                   if (td.kind === 'alternative') onTogglePickAlternative(td.alt.id)

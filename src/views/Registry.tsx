@@ -34,6 +34,7 @@ import {
   deleteCatalogTierOverride,
   deleteCustomItem,
   deletePick,
+  setPickTransferred,
   updateAlternative,
   updateCustomItem,
   updatePickQty,
@@ -64,6 +65,7 @@ export default function Registry() {
     myPicksOnly: false,
     hideMuted: false,
     showOnlySaved: false,
+    onlyNotTransferred: false,
   })
   const [modal, setModal] = useState<AddItemMode | null>(null)
   const [pairOpen, setPairOpen] = useState(false)
@@ -109,6 +111,9 @@ export default function Registry() {
       if (filters.where.size > 0 && !filters.where.has(item.where_to_buy ?? '')) return false
       if (filters.myPicksOnly) {
         if (!anyPickForItem(di, data.picks, personId, data.alternatives)) return false
+      }
+      if (filters.onlyNotTransferred) {
+        if (!anyNotTransferredPickForItem(di, data.picks, data.alternatives)) return false
       }
       return true
     })
@@ -315,6 +320,11 @@ export default function Registry() {
 
   async function handleChangePickQty(pickId: string, qty: number) {
     await updatePickQty(pickId, qty)
+  }
+
+  async function handleSetPickTransferred(pickId: string, transferred: boolean) {
+    if (!personId) return
+    await setPickTransferred(pickId, transferred ? personId : null)
   }
 
   async function handleAddCustomItem(input: {
@@ -649,6 +659,7 @@ export default function Registry() {
                       onTogglePickCustom={handleTogglePickCustom}
                       onTogglePickAlternative={handleTogglePickAlternative}
                       onChangePickQty={handleChangePickQty}
+                      onSetPickTransferred={handleSetPickTransferred}
                       onChangeItemState={(next) => handleChangeItemState(di, next)}
                       onEditCustom={
                         di.kind === 'custom'
@@ -928,6 +939,39 @@ function anyPickForItem(
           (p.alternative_id && altIds.includes(p.alternative_id))),
     )
   }
+}
+
+/**
+ * Variant for the "Not yet on Babylist" filter — does ANY pick on this item
+ * (regardless of person) still need to be transferred? Used as the show/hide
+ * gate when filters.onlyNotTransferred is on.
+ */
+function anyNotTransferredPickForItem(
+  di: DisplayItem,
+  picks: Pick[],
+  alternatives: { id: string; catalog_item_id: string | null; custom_item_id: string | null }[],
+): boolean {
+  if (di.kind === 'catalog') {
+    const tierIds = new Set(di.item.tiers.map((t) => t.id))
+    const altIds = new Set(
+      alternatives.filter((a) => a.catalog_item_id === di.item.id).map((a) => a.id),
+    )
+    return picks.some(
+      (p) =>
+        p.transferred_at === null &&
+        ((p.catalog_tier_id !== null && tierIds.has(p.catalog_tier_id)) ||
+          (p.alternative_id !== null && altIds.has(p.alternative_id))),
+    )
+  }
+  const altIds = new Set(
+    alternatives.filter((a) => a.custom_item_id === di.item.id).map((a) => a.id),
+  )
+  return picks.some(
+    (p) =>
+      p.transferred_at === null &&
+      (p.custom_item_id === di.item.id ||
+        (p.alternative_id !== null && altIds.has(p.alternative_id))),
+  )
 }
 
 function computeTotals(

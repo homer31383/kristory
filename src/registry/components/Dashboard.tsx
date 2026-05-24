@@ -47,6 +47,23 @@ export default function Dashboard({
       <Stat label="If All Premium" value={fmtUSD(totals.allPremium)} sub={`${totals.itemCount} items`} />
       <Stat label="Your Picks" value={fmtUSD(myTotal)} sub={`${myPicks.length} picks`} accent />
 
+      {picks.length > 0 && (
+        <div
+          style={{
+            gridColumn: '1 / -1',
+            textAlign: 'center',
+            fontFamily: 'Fraunces',
+            fontStyle: 'italic',
+            fontSize: 13,
+            color: 'var(--ink-faint)',
+            paddingTop: 4,
+          }}
+        >
+          {picks.filter((p) => p.transferred_at !== null).length} of {picks.length}{' '}
+          picks transferred to Babylist
+        </div>
+      )}
+
       {perPerson.length > 1 && (
         <div
           style={{

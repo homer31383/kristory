@@ -6,6 +6,7 @@ export interface Filters {
   myPicksOnly: boolean
   hideMuted: boolean
   showOnlySaved: boolean
+  onlyNotTransferred: boolean
 }
 
 interface Props {
@@ -34,6 +35,9 @@ export default function FilterBar({ filters, setFilters }: Props) {
   }
   function toggleShowOnlySaved() {
     setFilters({ ...filters, showOnlySaved: !filters.showOnlySaved })
+  }
+  function toggleOnlyNotTransferred() {
+    setFilters({ ...filters, onlyNotTransferred: !filters.onlyNotTransferred })
   }
 
   return (
@@ -169,6 +173,29 @@ export default function FilterBar({ filters, setFilters }: Props) {
       >
         <BookmarkIcon />
         {filters.showOnlySaved ? '✓ Only saved' : 'Only saved'}
+      </button>
+
+      <button
+        onClick={toggleOnlyNotTransferred}
+        title="Show only items whose picks haven't been moved to Babylist yet"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          background: filters.onlyNotTransferred ? 'var(--ink-soft)' : 'transparent',
+          color: filters.onlyNotTransferred ? 'var(--cream)' : 'var(--ink-soft)',
+          padding: '8px 14px',
+          borderRadius: 100,
+          border: `1px solid ${filters.onlyNotTransferred ? 'var(--ink-soft)' : 'var(--line)'}`,
+          fontFamily: 'Manrope',
+          fontSize: 11,
+          fontWeight: 600,
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
+          cursor: 'pointer',
+        }}
+      >
+        {filters.onlyNotTransferred ? '✓ Not yet on Babylist' : 'Not yet on Babylist'}
       </button>
     </div>
   )
