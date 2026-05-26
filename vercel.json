@@ -4,6 +4,8 @@
   ],
   "functions": {
     "api/parse-ingredients.ts": { "maxDuration": 60 },
-    "api/scan-recipe.ts": { "maxDuration": 60 }
+    "api/scan-recipe.ts": { "maxDuration": 60 },
+    "api/scan-bookshelf.ts": { "maxDuration": 60 },
+    "api/book-ai.ts": { "maxDuration": 30 }
   }
 }

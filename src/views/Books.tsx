@@ -11,6 +11,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useBooksCategoryId, useBooks, useMediaTags } from '../hooks/useLibrary'
 import { useDebouncedValue } from '../hooks/useDebounce'
 import AddBookSheet from '../components/AddBookSheet'
+import ScanBookshelfModal from '../components/ScanBookshelfModal'
 import type { BookStatus, TaggedItem } from '../types'
 
 type StatusPill = 'all' | 'want' | 'reading' | 'read' | 'art' | 'favorites'
@@ -41,6 +42,7 @@ export default function Books() {
   const [searchInput, setSearchInput] = useState('')
   const search = useDebouncedValue(searchInput, 250)
   const [addOpen, setAddOpen] = useState(false)
+  const [scanOpen, setScanOpen] = useState(false)
 
   const { data: booksCategoryId, isLoading: catLoading } = useBooksCategoryId()
   const { data: tags = [] } = useMediaTags('books')
@@ -118,13 +120,27 @@ export default function Books() {
         >
           📖 Books
         </h1>
-        <button
-          onClick={() => setAddOpen(true)}
-          className="text-sm px-3 py-2 rounded-lg font-medium cursor-pointer"
-          style={{ backgroundColor: 'var(--accent)', color: 'white' }}
-        >
-          + Add Book
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setScanOpen(true)}
+            className="text-sm px-3 py-2 rounded-lg cursor-pointer"
+            style={{
+              backgroundColor: 'var(--bg-card)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-card)',
+            }}
+            title="Scan a photo of your bookshelf"
+          >
+            📷 Scan
+          </button>
+          <button
+            onClick={() => setAddOpen(true)}
+            className="text-sm px-3 py-2 rounded-lg font-medium cursor-pointer"
+            style={{ backgroundColor: 'var(--accent)', color: 'white' }}
+          >
+            + Add Book
+          </button>
+        </div>
       </div>
 
       {/* Search */}
@@ -248,6 +264,13 @@ export default function Books() {
             setAddOpen(false)
             navigate(`/library/books/${id}`)
           }}
+        />
+      )}
+
+      {scanOpen && booksCategoryId && (
+        <ScanBookshelfModal
+          categoryId={booksCategoryId}
+          onClose={() => setScanOpen(false)}
         />
       )}
     </div>

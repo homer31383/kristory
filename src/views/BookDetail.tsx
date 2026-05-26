@@ -15,6 +15,7 @@ import {
   useToggleHallOfFame,
   useMediaTags,
 } from '../hooks/useLibrary'
+import { generateBookAI } from '../lib/bookAi'
 import type { BookFormat, BookStatus } from '../types'
 
 const STATUSES: { id: BookStatus; label: string }[] = [
@@ -55,6 +56,8 @@ export default function BookDetail() {
   const [pageCount, setPageCount] = useState<string>('')
   const [startDate, setStartDate] = useState('')
   const [finishDate, setFinishDate] = useState('')
+  const [aiBusy, setAiBusy] = useState<'summary' | 'themes' | null>(null)
+  const [aiError, setAiError] = useState<string | null>(null)
 
   const selectedTagIds = useMemo(
     () => new Set((book?.media_tags ?? []).map((mt) => mt.tag.id)),
@@ -90,7 +93,32 @@ export default function BookDetail() {
     const next = new Set(selectedTagIds)
     if (next.has(tagId)) next.delete(tagId)
     else next.add(tagId)
-    saveField({mediaTagIds: [...next] })
+    saveField({ mediaTagIds: [...next] })
+  }
+
+  async function generateAI(action: 'summary' | 'themes') {
+    if (!book) return
+    setAiBusy(action)
+    setAiError(null)
+    try {
+      const text = await generateBookAI({
+        action,
+        title: name || book.name,
+        author: author || null,
+        description: summary || null,
+      })
+      if (action === 'summary') {
+        setSummary(text)
+        saveField({ summary: text })
+      } else {
+        setThemes(text)
+        saveField({ themes: text })
+      }
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : 'AI generation failed')
+    } finally {
+      setAiBusy(null)
+    }
   }
 
   return (
@@ -345,13 +373,38 @@ export default function BookDetail() {
         />
       </section>
 
-      {/* Summary */}
+      {/* Summary (AI) */}
       <section className="mb-5">
-        <SectionLabel>Summary</SectionLabel>
+        <div className="flex items-center justify-between">
+          <SectionLabel>
+            Summary{' '}
+            {summary && (
+              <span
+                className="ml-1 text-[10px] px-1.5 py-0.5 rounded font-medium"
+                style={{ backgroundColor: 'var(--accent)', color: 'white' }}
+              >
+                AI
+              </span>
+            )}
+          </SectionLabel>
+          <button
+            disabled={aiBusy !== null}
+            onClick={() => generateAI('summary')}
+            className="text-[11px] px-2 py-1 rounded cursor-pointer mb-1"
+            style={{
+              backgroundColor: 'var(--bg-card)',
+              color: 'var(--text-secondary)',
+              border: '1px solid var(--border-card)',
+              opacity: aiBusy ? 0.5 : 1,
+            }}
+          >
+            {aiBusy === 'summary' ? 'Generating…' : '✨ Generate'}
+          </button>
+        </div>
         <textarea
           value={summary}
           onChange={(e) => setSummary(e.target.value)}
-          onBlur={() => summary !== (book.summary ?? '') && saveField({summary: summary || null })}
+          onBlur={() => summary !== (book.summary ?? '') && saveField({ summary: summary || null })}
           rows={4}
           className="w-full text-sm px-3 py-2 rounded border resize-y"
           style={{
@@ -363,13 +416,38 @@ export default function BookDetail() {
         />
       </section>
 
-      {/* Themes */}
+      {/* Themes (AI) */}
       <section className="mb-5">
-        <SectionLabel>Themes</SectionLabel>
+        <div className="flex items-center justify-between">
+          <SectionLabel>
+            Themes{' '}
+            {themes && (
+              <span
+                className="ml-1 text-[10px] px-1.5 py-0.5 rounded font-medium"
+                style={{ backgroundColor: 'var(--accent)', color: 'white' }}
+              >
+                AI
+              </span>
+            )}
+          </SectionLabel>
+          <button
+            disabled={aiBusy !== null}
+            onClick={() => generateAI('themes')}
+            className="text-[11px] px-2 py-1 rounded cursor-pointer mb-1"
+            style={{
+              backgroundColor: 'var(--bg-card)',
+              color: 'var(--text-secondary)',
+              border: '1px solid var(--border-card)',
+              opacity: aiBusy ? 0.5 : 1,
+            }}
+          >
+            {aiBusy === 'themes' ? 'Generating…' : '✨ Generate'}
+          </button>
+        </div>
         <textarea
           value={themes}
           onChange={(e) => setThemes(e.target.value)}
-          onBlur={() => themes !== (book.themes ?? '') && saveField({themes: themes || null })}
+          onBlur={() => themes !== (book.themes ?? '') && saveField({ themes: themes || null })}
           rows={3}
           className="w-full text-sm px-3 py-2 rounded border resize-y"
           style={{
@@ -380,6 +458,15 @@ export default function BookDetail() {
           placeholder="Identity, memory, loss…"
         />
       </section>
+
+      {aiError && (
+        <div
+          className="text-xs mb-4 px-3 py-2 rounded"
+          style={{ backgroundColor: '#F4DADA', color: '#7A2A2A' }}
+        >
+          {aiError}
+        </div>
+      )}
 
       {/* What Stuck */}
       <section className="mb-5">
