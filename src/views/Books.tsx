@@ -12,6 +12,7 @@ import { useBooksCategoryId, useBooks, useMediaTags } from '../hooks/useLibrary'
 import { useDebouncedValue } from '../hooks/useDebounce'
 import AddBookSheet from '../components/AddBookSheet'
 import ScanBookshelfModal from '../components/ScanBookshelfModal'
+import GenerateAllModal from '../components/GenerateAllModal'
 import type { BookStatus, TaggedItem } from '../types'
 
 type StatusPill = 'all' | 'want' | 'reading' | 'read' | 'art' | 'favorites'
@@ -43,6 +44,7 @@ export default function Books() {
   const search = useDebouncedValue(searchInput, 250)
   const [addOpen, setAddOpen] = useState(false)
   const [scanOpen, setScanOpen] = useState(false)
+  const [generateAllOpen, setGenerateAllOpen] = useState(false)
 
   const { data: booksCategoryId, isLoading: catLoading } = useBooksCategoryId()
   const { data: tags = [] } = useMediaTags('books')
@@ -120,7 +122,24 @@ export default function Books() {
         >
           📖 Books
         </h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 justify-end">
+          {/* Only show Generate All when there's actually work to do — keeps
+              the header clean for libraries where everything is already
+              fleshed out. */}
+          {books.some((b) => !b.summary || !b.themes) && (
+            <button
+              onClick={() => setGenerateAllOpen(true)}
+              className="text-sm px-3 py-2 rounded-lg cursor-pointer"
+              style={{
+                backgroundColor: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-card)',
+              }}
+              title="Generate summaries and themes for books that are missing them"
+            >
+              ✨ Generate All
+            </button>
+          )}
           <button
             onClick={() => setScanOpen(true)}
             className="text-sm px-3 py-2 rounded-lg cursor-pointer"
@@ -272,6 +291,10 @@ export default function Books() {
           categoryId={booksCategoryId}
           onClose={() => setScanOpen(false)}
         />
+      )}
+
+      {generateAllOpen && (
+        <GenerateAllModal books={books} onClose={() => setGenerateAllOpen(false)} />
       )}
     </div>
   )

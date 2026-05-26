@@ -106,6 +106,50 @@ async function searchGoogleBooks(query: string): Promise<BookLookupResult[]> {
   }
 }
 
+/**
+ * Pick the best free-text description for a book — Google Books wins because
+ * its `description` is typically a full back-cover blurb. Open Library's
+ * `first_sentence` is the fallback (one sentence, but real text). Used by the
+ * batch "Generate All" flow to avoid spending Claude tokens when a perfectly
+ * good description is already available for free.
+ */
+export async function lookupBookDescription(
+  title: string,
+  author: string | null,
+): Promise<string | null> {
+  const query = author ? `${title} ${author}` : title
+
+  // Google Books first — its descriptions are substantive blurbs.
+  type GBItem = { volumeInfo?: { description?: string } }
+  type GBResp = { items?: GBItem[] }
+  try {
+    const gbUrl = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(
+      query,
+    )}&maxResults=3`
+    const gb = (await fetchJson(gbUrl)) as GBResp
+    for (const it of gb.items ?? []) {
+      const desc = it.volumeInfo?.description
+      if (desc && desc.trim().length > 50) return desc.trim()
+    }
+  } catch {
+    // fall through to Open Library
+  }
+
+  type OLDoc = { first_sentence?: string[] }
+  type OLResp = { docs?: OLDoc[] }
+  try {
+    const olUrl = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=3`
+    const ol = (await fetchJson(olUrl)) as OLResp
+    for (const d of ol.docs ?? []) {
+      const s = d.first_sentence?.[0]
+      if (s && s.trim().length > 30) return s.trim()
+    }
+  } catch {
+    // ignore
+  }
+  return null
+}
+
 /** Search both providers, merge, prefer Open Library when both have it. */
 export async function searchBooks(query: string): Promise<BookLookupResult[]> {
   if (!query.trim()) return []
