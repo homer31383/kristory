@@ -35,6 +35,8 @@ async function fetchData(onProgress: ProgressCallback) {
     recipeTags,
     taggedItemRecipeTags,
     participants,
+    mediaTags,
+    taggedItemMediaTags,
     trips,
     tripEntries,
     babyProfile,
@@ -56,10 +58,17 @@ async function fetchData(onProgress: ProgressCallback) {
     fetchAll('entry_sections', '*, user:users!user_id(name)'),
     fetchAll('entry_photos', '*', 'display_order'),
     fetchAll('categories', '*', 'name'),
-    fetchAll('tagged_items', '*, category:categories!category_id(name, emoji), user:users!user_id(name), recipe_tags:tagged_item_recipe_tags!tagged_item_id(tag:recipe_tags!recipe_tag_id(name))'),
+    fetchAll(
+      'tagged_items',
+      // Pulls both tag taxonomies inline so the structured per-item view
+      // doesn't silently drop the Library book tags.
+      '*, category:categories!category_id(name, emoji), user:users!user_id(name), recipe_tags:tagged_item_recipe_tags!tagged_item_id(tag:recipe_tags!recipe_tag_id(name)), media_tags:tagged_item_media_tags!tagged_item_id(tag:media_tags!media_tag_id(name))',
+    ),
     fetchAll('recipe_tags', '*', 'name'),
     fetchAll('tagged_item_recipe_tags'),
     fetchAll('tagged_item_participants', '*, user:users!user_id(name)'),
+    fetchAll('media_tags', '*', 'name'),
+    fetchAll('tagged_item_media_tags'),
     fetchAll('trips', '*', 'start_date'),
     fetchAll('trip_entries'),
     supabase.from('baby_profile').select('*').maybeSingle().then(r => r.data),
@@ -80,6 +89,7 @@ async function fetchData(onProgress: ProgressCallback) {
   return {
     users, entries, sections, photos, categories,
     taggedItems, recipeTags, taggedItemRecipeTags, participants,
+    mediaTags, taggedItemMediaTags,
     trips, tripEntries, babyProfile, milestones,
     familyPosts, familyPostPhotos, nameSuggestions, appSettings,
     showerEvent, showerGuests, showerTasks, showerSchedule, showerHelpers, showerPhotos, showerMenu,
@@ -121,7 +131,10 @@ function buildDataJson(raw: Awaited<ReturnType<typeof fetchData>>) {
     participantsByItem.set(p.tagged_item_id, arr)
   }
 
-  // Build entry -> tagged items
+  // Build entry -> tagged items.
+  // The mapping includes every tagged_items column so a restore from this
+  // JSON is lossless — Library / Books rich fields from migration 030
+  // (status, themes, summary, etc.) used to silently drop here.
   const itemsByEntry = new Map<string, any[]>()
   const standaloneItems: any[] = []
   for (const item of raw.taggedItems) {
@@ -130,10 +143,31 @@ function buildDataJson(raw: Awaited<ReturnType<typeof fetchData>>) {
       category: item.category?.name ?? '',
       rating: item.rating,
       location_name: item.location_name,
+      location_lat: item.location_lat ?? null,
+      location_lng: item.location_lng ?? null,
+      location_place_id: item.location_place_id ?? null,
       ingredients: item.ingredients,
       instructions: item.instructions,
       item_date: item.item_date,
+      // Library / Books rich fields (migration 030).
+      subtitle: item.subtitle ?? null,
+      author: item.author ?? null,
+      status: item.status ?? null,
+      format: item.format ?? null,
+      start_date: item.start_date ?? null,
+      finish_date: item.finish_date ?? null,
+      recommended_by: item.recommended_by ?? null,
+      themes: item.themes ?? null,
+      summary: item.summary ?? null,
+      what_stuck: item.what_stuck ?? null,
+      cover_url: item.cover_url ?? null,
+      favorite: item.favorite ?? false,
+      hall_of_fame: item.hall_of_fame ?? false,
+      isbn: item.isbn ?? null,
+      page_count: item.page_count ?? null,
+      subcategory: item.subcategory ?? null,
       recipe_tags: (item.recipe_tags ?? []).map((rt: any) => rt.tag?.name).filter(Boolean),
+      media_tags: (item.media_tags ?? []).map((mt: any) => mt.tag?.name).filter(Boolean),
       participants: participantsByItem.get(item.id) ?? [],
     }
     if (item.entry_id) {
@@ -199,7 +233,7 @@ function buildDataJson(raw: Awaited<ReturnType<typeof fetchData>>) {
 
   return {
     backup_date: new Date().toISOString(),
-    app_version: '1.0.0',
+    app_version: '1.1.0',
     users: raw.users.map((u: any) => ({ name: u.name })),
     journal_entries: journalEntries,
     standalone_items: standaloneItems,
@@ -216,6 +250,11 @@ function buildDataJson(raw: Awaited<ReturnType<typeof fetchData>>) {
       is_default: c.is_default,
     })),
     recipe_tags: raw.recipeTags.map((t: any) => ({ name: t.name, emoji: t.emoji })),
+    // The Library tag taxonomy (migration 030).
+    media_tags: raw.mediaTags.map((t: any) => ({
+      name: t.name,
+      category_type: t.category_type,
+    })),
     baby: {
       profile: raw.babyProfile ? {
         name: raw.babyProfile.name,
@@ -263,6 +302,10 @@ function buildReadme(raw: Awaited<ReturnType<typeof fetchData>>) {
   const earliest = entryDates[0] ?? 'N/A'
   const latest = entryDates[entryDates.length - 1] ?? 'N/A'
   const recipeCount = raw.taggedItems.filter((i: any) => i.ingredients || i.instructions).length
+  const bookCount = raw.taggedItems.filter(
+    (i: any) => (i.category?.name ?? '').toLowerCase() === 'books',
+  ).length
+  const showerGuestCount = raw.showerGuests.length
 
   return `The Kristory — Data Backup
 Exported: ${now}
@@ -272,10 +315,13 @@ This backup contains:
 - ${raw.photos.length} photos
 - ${raw.taggedItems.length} tagged items across ${raw.categories.length} categories
 - ${recipeCount} recipes
+- ${bookCount} books in the Library
+- ${raw.mediaTags.length} media tags (Library tag taxonomy)
 - ${raw.trips.length} trips
 - ${raw.milestones.length} baby milestones
 - ${raw.familyPosts.length} family feed posts
 - ${raw.nameSuggestions.length} baby name suggestions
+- Baby shower data: ${showerGuestCount} guest${showerGuestCount === 1 ? '' : 's'}, ${raw.showerTasks.length} task${raw.showerTasks.length === 1 ? '' : 's'}, ${raw.showerMenu.length} menu item${raw.showerMenu.length === 1 ? '' : 's'}, ${raw.showerPhotos.length} photo${raw.showerPhotos.length === 1 ? '' : 's'}
 
 To restore: Use the rebuild prompt (THE-KRISTORY-REBUILD-PROMPT.txt)
 to recreate the app, then import this data.json file via Settings.
@@ -429,6 +475,7 @@ ON CONFLICT (name) DO NOTHING;
 -- ============================================
 -- TAGGED ITEMS
 -- ============================================
+-- Includes the Library / Books rich fields from migration 030.
 
 CREATE TABLE IF NOT EXISTS tagged_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -444,6 +491,23 @@ CREATE TABLE IF NOT EXISTS tagged_items (
   ingredients text,
   instructions text,
   item_date date,
+  -- Library / Books rich fields
+  subtitle text,
+  author text,
+  status text DEFAULT 'want' CHECK (status IN ('want', 'reading', 'read', 'abandoned', 'reference')),
+  format text CHECK (format IN ('physical', 'ebook', 'audiobook')),
+  start_date date,
+  finish_date date,
+  recommended_by text,
+  themes text,
+  summary text,
+  what_stuck text,
+  cover_url text,
+  favorite boolean DEFAULT false,
+  hall_of_fame boolean DEFAULT false,
+  isbn text,
+  page_count integer,
+  subcategory text,
   created_at timestamptz DEFAULT now()
 );
 
@@ -492,6 +556,58 @@ CREATE TABLE IF NOT EXISTS tagged_item_participants (
 );
 
 ALTER TABLE tagged_item_participants DISABLE ROW LEVEL SECURITY;
+
+-- ============================================
+-- MEDIA TAGS (Library tag taxonomy — migration 030)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS media_tags (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL UNIQUE,
+  category_type text NOT NULL DEFAULT 'books',
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE media_tags DISABLE ROW LEVEL SECURITY;
+
+-- Seed the initial Books taxonomy.
+INSERT INTO media_tags (name, category_type) VALUES
+  ('Fiction', 'books'),
+  ('Nonfiction', 'books'),
+  ('Art', 'books'),
+  ('Memoir', 'books'),
+  ('Biography', 'books'),
+  ('Poetry', 'books'),
+  ('Graphic Novel', 'books'),
+  ('Cookbook', 'books'),
+  ('History', 'books'),
+  ('Science', 'books'),
+  ('Philosophy', 'books'),
+  ('Self-Help', 'books'),
+  ('Fantasy', 'books'),
+  ('Sci-Fi', 'books'),
+  ('Mystery', 'books'),
+  ('Horror', 'books'),
+  ('Romance', 'books'),
+  ('Travel', 'books'),
+  ('Business', 'books'),
+  ('Design', 'books'),
+  ('Photography', 'books'),
+  ('Architecture', 'books'),
+  ('Children', 'books')
+ON CONFLICT (name) DO NOTHING;
+
+-- ============================================
+-- MEDIA TAG JUNCTION
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS tagged_item_media_tags (
+  tagged_item_id uuid REFERENCES tagged_items(id) ON DELETE CASCADE,
+  media_tag_id uuid REFERENCES media_tags(id) ON DELETE CASCADE,
+  PRIMARY KEY (tagged_item_id, media_tag_id)
+);
+
+ALTER TABLE tagged_item_media_tags DISABLE ROW LEVEL SECURITY;
 
 -- ============================================
 -- TRIPS
@@ -615,6 +731,143 @@ CREATE TABLE IF NOT EXISTS app_settings (
 ALTER TABLE app_settings DISABLE ROW LEVEL SECURITY;
 
 -- ============================================
+-- BABY SHOWER — EVENT
+-- ============================================
+-- All optional event-level config (date, location, hero image,
+-- background styling, etc.). Migrations 007 + 013/014 + 023-027.
+
+CREATE TABLE IF NOT EXISTS baby_shower_event (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_date date,
+  event_time text,
+  location_name text,
+  location_address text,
+  description text,
+  registry_links jsonb DEFAULT '[]',
+  hero_image_path text,
+  hero_focal_point text DEFAULT '50% 50%',
+  background_image_path text,
+  background_opacity decimal DEFAULT 0.85,
+  background_zoom decimal DEFAULT 1.0,
+  bg_fill_color text DEFAULT '#EDE6DE',
+  bg_tile_path text,
+  bg_tile_count integer DEFAULT 5,
+  bg_feather_edges boolean DEFAULT true,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE baby_shower_event DISABLE ROW LEVEL SECURITY;
+
+-- Seed an empty event row so the editor has something to update.
+INSERT INTO baby_shower_event (event_date)
+SELECT NULL WHERE NOT EXISTS (SELECT 1 FROM baby_shower_event);
+
+-- ============================================
+-- BABY SHOWER — HELPERS (created BEFORE tasks: tasks.helper_id FKs here)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS baby_shower_helpers (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  role text NOT NULL,
+  color text DEFAULT '#6B5CA5',
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE baby_shower_helpers DISABLE ROW LEVEL SECURITY;
+
+-- ============================================
+-- BABY SHOWER — GUESTS
+-- ============================================
+-- Migrations 007 + 008 + 011 (address became JSONB) + 015 (side).
+
+CREATE TABLE IF NOT EXISTS baby_shower_guests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  email text,
+  phone text,
+  address jsonb,
+  invitation_sent boolean DEFAULT false,
+  invitation_sent_date date,
+  rsvp_status text DEFAULT 'pending' CHECK (rsvp_status IN ('pending', 'yes', 'no', 'maybe')),
+  rsvp_date date,
+  plus_one boolean DEFAULT false,
+  plus_one_name text,
+  gift_description text,
+  gift_photo_path text,
+  thank_you_sent boolean DEFAULT false,
+  dietary_needs text,
+  notes text,
+  side text CHECK (side IN ('L', 'B')),
+  added_by text DEFAULT 'host',
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE baby_shower_guests DISABLE ROW LEVEL SECURITY;
+
+-- ============================================
+-- BABY SHOWER — TASKS
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS baby_shower_tasks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  title text NOT NULL,
+  completed boolean DEFAULT false,
+  display_order integer DEFAULT 0,
+  helper_id uuid REFERENCES baby_shower_helpers(id) ON DELETE SET NULL,
+  due_date date,
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE baby_shower_tasks DISABLE ROW LEVEL SECURITY;
+
+-- ============================================
+-- BABY SHOWER — SCHEDULE
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS baby_shower_schedule (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  time_slot text NOT NULL,
+  description text NOT NULL,
+  display_order integer DEFAULT 0,
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE baby_shower_schedule DISABLE ROW LEVEL SECURITY;
+
+-- ============================================
+-- BABY SHOWER — PHOTOS
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS baby_shower_photos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  storage_path text NOT NULL,
+  uploaded_by text,
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE baby_shower_photos DISABLE ROW LEVEL SECURITY;
+
+-- ============================================
+-- BABY SHOWER — MENU
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS baby_shower_menu (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  item_name text NOT NULL,
+  quantity integer DEFAULT 1,
+  unit_label text DEFAULT 'servings',
+  notes text,
+  prepared boolean DEFAULT false,
+  display_order integer DEFAULT 0,
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE baby_shower_menu DISABLE ROW LEVEL SECURITY;
+
+-- ============================================
 -- STORAGE BUCKET
 -- ============================================
 
@@ -700,17 +953,27 @@ a) MANUAL SQL APPROACH:
      2. journal_entries
      3. entry_sections
      4. entry_photos (after uploading photos — see step 8)
-     5. tagged_items
+     5. tagged_items (includes the Library rich-book columns —
+        author/status/format/summary/themes/what_stuck/cover_url/etc.)
      6. tagged_item_recipe_tags
      7. tagged_item_participants
-     8. trips
-     9. trip_entries
-     10. baby_profile (UPDATE the existing row)
-     11. baby_milestones
-     12. family_posts
-     13. family_post_photos
-     14. baby_name_suggestions
-     15. app_settings
+     8. media_tags (seeded by step 3 SQL; insert any user-added rows)
+     9. tagged_item_media_tags
+    10. trips
+    11. trip_entries
+    12. baby_profile (UPDATE the existing row)
+    13. baby_milestones
+    14. family_posts
+    15. family_post_photos
+    16. baby_name_suggestions
+    17. app_settings
+    18. baby_shower_event (UPDATE the existing row)
+    19. baby_shower_helpers (before tasks — tasks.helper_id FKs here)
+    20. baby_shower_guests
+    21. baby_shower_tasks
+    22. baby_shower_schedule
+    23. baby_shower_photos
+    24. baby_shower_menu
 
 b) FUTURE RESTORE TOOL:
    - A "Restore from Backup" feature in Settings is planned
