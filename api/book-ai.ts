@@ -19,16 +19,28 @@ function jsonResponse(body: unknown, status: number): Response {
   })
 }
 
-type Action = 'summary' | 'themes'
+type Action = 'summary' | 'themes' | 'classify'
 
-function buildPrompt(action: Action, title: string, author: string | null, description: string | null): string {
+function buildPrompt(
+  action: Action,
+  title: string,
+  author: string | null,
+  description: string | null,
+  availableTags: string[] | null,
+): string {
   const authorPart = author ? ` by ${author}` : ''
   const desc = description ? `\n\nKnown description (may be partial):\n${description}` : ''
   if (action === 'summary') {
     return `Write a concise 2-3 sentence summary of the book "${title}"${authorPart}. Focus on what it's about, not whether it's good. No spoilers beyond the premise. Return only the summary — no preamble, no bullet points, no markdown.${desc}`
   }
-  // themes
-  return `List the main themes of the book "${title}"${authorPart} as a short comma-separated list (5-8 themes maximum). Examples: "identity, memory, grief, friendship". Return ONLY the comma-separated list — no preamble, no numbering, no markdown.${desc}`
+  if (action === 'themes') {
+    return `List the main themes of the book "${title}"${authorPart} as a short comma-separated list (5-8 themes maximum). Examples: "identity, memory, grief, friendship". Return ONLY the comma-separated list — no preamble, no numbering, no markdown.${desc}`
+  }
+  // classify — pick from a fixed list of subcategory tags.
+  const tagList = (availableTags ?? []).join(', ')
+  return `Classify the book "${title}"${authorPart} into the most appropriate subcategory tags from the list below. Pick the 2-4 best fits. Return ONLY exact tag names from the list, separated by commas, with no preamble, numbering, or markdown. If unsure between many tags, prefer fewer (broader) tags over more.
+
+Available tags: ${tagList}${desc}`
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -49,9 +61,11 @@ export async function POST(req: Request): Promise<Response> {
   const body = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>
   const actionRaw = body.action
   const action: Action | null =
-    actionRaw === 'summary' || actionRaw === 'themes' ? actionRaw : null
+    actionRaw === 'summary' || actionRaw === 'themes' || actionRaw === 'classify'
+      ? actionRaw
+      : null
   if (!action) {
-    return jsonResponse({ error: 'action must be "summary" or "themes".' }, 400)
+    return jsonResponse({ error: 'action must be "summary", "themes", or "classify".' }, 400)
   }
 
   const title = typeof body.title === 'string' ? body.title.trim() : ''
@@ -64,7 +78,21 @@ export async function POST(req: Request): Promise<Response> {
       ? body.description.trim()
       : null
 
-  const prompt = buildPrompt(action, title, author, description)
+  let availableTags: string[] | null = null
+  if (Array.isArray(body.available_tags)) {
+    availableTags = body.available_tags
+      .filter((s): s is string => typeof s === 'string')
+      .map((s) => s.trim())
+      .filter(Boolean)
+  }
+  if (action === 'classify' && (!availableTags || availableTags.length === 0)) {
+    return jsonResponse(
+      { error: 'available_tags must be a non-empty array of strings for classify.' },
+      400,
+    )
+  }
+
+  const prompt = buildPrompt(action, title, author, description, availableTags)
   const client = new Anthropic({ apiKey })
 
   try {

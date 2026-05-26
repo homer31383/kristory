@@ -12,7 +12,7 @@ import { useBooksCategoryId, useBooks, useMediaTags } from '../hooks/useLibrary'
 import { useDebouncedValue } from '../hooks/useDebounce'
 import AddBookSheet from '../components/AddBookSheet'
 import ScanBookshelfModal from '../components/ScanBookshelfModal'
-import GenerateAllModal from '../components/GenerateAllModal'
+import BookBatchModal, { type BatchMode } from '../components/BookBatchModal'
 import type { BookStatus, TaggedItem } from '../types'
 
 type StatusPill = 'all' | 'want' | 'reading' | 'read' | 'art' | 'favorites'
@@ -44,7 +44,7 @@ export default function Books() {
   const search = useDebouncedValue(searchInput, 250)
   const [addOpen, setAddOpen] = useState(false)
   const [scanOpen, setScanOpen] = useState(false)
-  const [generateAllOpen, setGenerateAllOpen] = useState(false)
+  const [batchMode, setBatchMode] = useState<BatchMode | null>(null)
 
   const { data: booksCategoryId, isLoading: catLoading } = useBooksCategoryId()
   const { data: tags = [] } = useMediaTags('books')
@@ -126,18 +126,32 @@ export default function Books() {
           {/* Only show Generate All when there's actually work to do — keeps
               the header clean for libraries where everything is already
               fleshed out. */}
-          {books.some((b) => !b.summary || !b.themes) && (
+          {books.some((b) => !b.summary || !b.themes || (b.media_tags?.length ?? 0) === 0) && (
             <button
-              onClick={() => setGenerateAllOpen(true)}
+              onClick={() => setBatchMode('all')}
               className="text-sm px-3 py-2 rounded-lg cursor-pointer"
               style={{
                 backgroundColor: 'var(--bg-card)',
                 color: 'var(--text-primary)',
                 border: '1px solid var(--border-card)',
               }}
-              title="Generate summaries and themes for books that are missing them"
+              title="Generate summaries, themes, and tags for books that are missing them"
             >
               ✨ Generate All
+            </button>
+          )}
+          {books.some((b) => (b.media_tags?.length ?? 0) === 0) && (
+            <button
+              onClick={() => setBatchMode('classify')}
+              className="text-sm px-3 py-2 rounded-lg cursor-pointer"
+              style={{
+                backgroundColor: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-card)',
+              }}
+              title="Auto-assign tags from your taxonomy to books that don't have any"
+            >
+              🏷 Classify All
             </button>
           )}
           <button
@@ -293,8 +307,12 @@ export default function Books() {
         />
       )}
 
-      {generateAllOpen && (
-        <GenerateAllModal books={books} onClose={() => setGenerateAllOpen(false)} />
+      {batchMode && (
+        <BookBatchModal
+          mode={batchMode}
+          books={books}
+          onClose={() => setBatchMode(null)}
+        />
       )}
     </div>
   )

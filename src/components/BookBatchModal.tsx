@@ -1,50 +1,97 @@
 /**
- * Batch generator — fills in missing summary / themes for every book in
- * the user's library. Runs sequentially so we don't fan out a dozen
- * Anthropic requests at once; the user can cancel mid-batch and we
- * still report whatever we managed to save.
+ * Batch processor for the Books library. Two modes share the same UI shell:
  *
- * Per-book order:
- *   1. Skip if summary AND themes are both already set.
- *   2. If summary missing: try Open Library / Google Books first (free,
- *      no token cost). Fall back to Claude if the free lookup misses.
- *   3. If themes missing: ask Claude.
+ *   mode = 'all'      ✨ Generate All — summary + themes + classification
+ *   mode = 'classify' 🏷 Classify All — classification only, on every book
  *
- * Errors on one book don't stop the batch — they're counted and we
- * keep moving.
+ * Both run sequentially so we don't fan out a dozen Anthropic requests at
+ * once; the user can cancel mid-batch and we still report whatever we
+ * managed to save.
+ *
+ * Per-book "all" mode flow:
+ *   1. If summary missing: try Google Books description, fall back to Open
+ *      Library, fall back to Claude.
+ *   2. If themes missing: ask Claude (passing whatever description we have).
+ *   3. If no media tags assigned: ask Claude to pick from the existing
+ *      media_tags taxonomy; insert matches.
+ *
+ * Per-book "classify" mode flow:
+ *   1. Skip if the book already has any media tags.
+ *   2. Otherwise: ask Claude to classify against the existing taxonomy.
+ *
+ * Errors on one book don't stop the batch — they're counted and we keep
+ * moving.
  */
 import { useRef, useState } from 'react'
-import { useUpdateBook } from '../hooks/useLibrary'
+import { useUpdateBook, useMediaTags } from '../hooks/useLibrary'
 import { lookupBookDescription } from '../lib/bookLookup'
-import { generateBookAI } from '../lib/bookAi'
-import type { TaggedItem } from '../types'
+import { generateBookAI, matchTagsToIds } from '../lib/bookAi'
+import type { MediaTag, TaggedItem } from '../types'
 
 type Stage = 'confirm' | 'running' | 'done'
+export type BatchMode = 'all' | 'classify'
 
 interface Props {
+  mode: BatchMode
   books: TaggedItem[]
   onClose: () => void
 }
 
-export default function GenerateAllModal({ books, onClose }: Props) {
+interface BatchResults {
+  summariesAdded: number
+  themesAdded: number
+  taggedAdded: number
+  failed: number
+  cancelled: boolean
+}
+
+function hasTags(b: TaggedItem): boolean {
+  return (b.media_tags?.length ?? 0) > 0
+}
+
+function bookNeedsAll(b: TaggedItem): boolean {
+  return !b.summary || !b.themes || !hasTags(b)
+}
+
+function bookNeedsClassify(b: TaggedItem): boolean {
+  return !hasTags(b)
+}
+
+export default function BookBatchModal({ mode, books, onClose }: Props) {
   const update = useUpdateBook()
+  const { data: mediaTags = [] } = useMediaTags('books')
   const cancelRef = useRef(false)
 
-  const pending = books.filter((b) => !b.summary || !b.themes)
+  const pending = books.filter(mode === 'all' ? bookNeedsAll : bookNeedsClassify)
 
   const [stage, setStage] = useState<Stage>('confirm')
   const [progress, setProgress] = useState({ index: 0, total: pending.length, title: '' })
-  const [results, setResults] = useState({
+  const [results, setResults] = useState<BatchResults>({
     summariesAdded: 0,
     themesAdded: 0,
+    taggedAdded: 0,
     failed: 0,
     cancelled: false,
   })
 
   function backdrop() {
-    // Don't allow clicking out while running — easy to cancel by accident.
     if (stage === 'running') return
     onClose()
+  }
+
+  async function classifyBook(book: TaggedItem, knownSummary: string | null): Promise<boolean> {
+    if (mediaTags.length === 0) return false
+    const csv = await generateBookAI({
+      action: 'classify',
+      title: book.name,
+      author: book.author ?? null,
+      description: knownSummary ?? book.summary ?? null,
+      availableTags: mediaTags.map((t) => t.name),
+    })
+    const ids = matchTagsToIds(csv, mediaTags as MediaTag[])
+    if (ids.length === 0) return false
+    await update.mutateAsync({ id: book.id, mediaTagIds: ids })
+    return true
   }
 
   async function run() {
@@ -52,6 +99,7 @@ export default function GenerateAllModal({ books, onClose }: Props) {
     cancelRef.current = false
     let summariesAdded = 0
     let themesAdded = 0
+    let taggedAdded = 0
     let failed = 0
     let cancelled = false
 
@@ -64,46 +112,61 @@ export default function GenerateAllModal({ books, onClose }: Props) {
       setProgress({ index: i, total: pending.length, title: book.name })
 
       try {
-        // ─── Summary ──────────────────────────────────────────────────
         let summaryText = book.summary ?? null
-        if (!summaryText) {
-          // Free lookup first.
-          summaryText = await lookupBookDescription(book.name, book.author ?? null)
+
+        if (mode === 'all') {
+          // ─── Summary ──────────────────────────────────────────────────
+          if (!summaryText) {
+            summaryText = await lookupBookDescription(book.name, book.author ?? null)
+            if (cancelRef.current) {
+              cancelled = true
+              break
+            }
+            if (!summaryText) {
+              summaryText = await generateBookAI({
+                action: 'summary',
+                title: book.name,
+                author: book.author ?? null,
+              })
+            }
+            if (summaryText) {
+              await update.mutateAsync({ id: book.id, summary: summaryText })
+              summariesAdded++
+            }
+          }
+
           if (cancelRef.current) {
             cancelled = true
             break
           }
-          if (!summaryText) {
-            // Claude fallback.
-            summaryText = await generateBookAI({
-              action: 'summary',
+
+          // ─── Themes ───────────────────────────────────────────────────
+          if (!book.themes) {
+            const themesText = await generateBookAI({
+              action: 'themes',
               title: book.name,
               author: book.author ?? null,
+              description: summaryText,
             })
+            if (themesText) {
+              await update.mutateAsync({ id: book.id, themes: themesText })
+              themesAdded++
+            }
           }
-          if (summaryText) {
-            await update.mutateAsync({ id: book.id, summary: summaryText })
-            summariesAdded++
+
+          if (cancelRef.current) {
+            cancelled = true
+            break
           }
         }
 
-        if (cancelRef.current) {
-          cancelled = true
-          break
-        }
-
-        // ─── Themes ───────────────────────────────────────────────────
-        if (!book.themes) {
-          const themesText = await generateBookAI({
-            action: 'themes',
-            title: book.name,
-            author: book.author ?? null,
-            description: summaryText, // give Claude what we now know
-          })
-          if (themesText) {
-            await update.mutateAsync({ id: book.id, themes: themesText })
-            themesAdded++
-          }
+        // ─── Classify ─────────────────────────────────────────────────
+        // Both modes run classification when the book has no tags. In
+        // 'all' mode this is the third step; in 'classify' mode it's the
+        // only step.
+        if (!hasTags(book)) {
+          const did = await classifyBook(book, summaryText)
+          if (did) taggedAdded++
         }
       } catch {
         failed++
@@ -111,13 +174,15 @@ export default function GenerateAllModal({ books, onClose }: Props) {
     }
 
     setProgress({ index: pending.length, total: pending.length, title: '' })
-    setResults({ summariesAdded, themesAdded, failed, cancelled })
+    setResults({ summariesAdded, themesAdded, taggedAdded, failed, cancelled })
     setStage('done')
   }
 
   function cancel() {
     cancelRef.current = true
   }
+
+  const title = mode === 'all' ? '✨ Generate All' : '🏷 Classify All'
 
   return (
     <div
@@ -135,7 +200,7 @@ export default function GenerateAllModal({ books, onClose }: Props) {
             className="text-lg"
             style={{ fontFamily: "'Playfair Display', serif", fontWeight: 700, color: 'var(--text-primary)' }}
           >
-            ✨ Generate All
+            {title}
           </h2>
           {stage !== 'running' && (
             <button
@@ -151,11 +216,7 @@ export default function GenerateAllModal({ books, onClose }: Props) {
 
         <div className="px-5 pb-5 space-y-4">
           {stage === 'confirm' && (
-            <ConfirmStage
-              total={pending.length}
-              onRun={run}
-              onClose={onClose}
-            />
+            <ConfirmStage mode={mode} total={pending.length} onRun={run} onClose={onClose} />
           )}
 
           {stage === 'running' && (
@@ -163,7 +224,7 @@ export default function GenerateAllModal({ books, onClose }: Props) {
           )}
 
           {stage === 'done' && (
-            <DoneStage results={results} onClose={onClose} />
+            <DoneStage mode={mode} results={results} onClose={onClose} />
           )}
         </div>
       </div>
@@ -173,10 +234,12 @@ export default function GenerateAllModal({ books, onClose }: Props) {
 
 // ─── Confirm stage ─────────────────────────────────────────────────────
 function ConfirmStage({
+  mode,
   total,
   onRun,
   onClose,
 }: {
+  mode: BatchMode
   total: number
   onRun: () => void
   onClose: () => void
@@ -185,7 +248,9 @@ function ConfirmStage({
     return (
       <>
         <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-          Every book in your library already has a summary and themes. Nothing to generate.
+          {mode === 'all'
+            ? 'Every book in your library already has a summary, themes, and tags. Nothing to generate.'
+            : 'Every book in your library already has tags. Nothing to classify.'}
         </p>
         <div className="flex justify-end pt-2">
           <button
@@ -199,19 +264,21 @@ function ConfirmStage({
       </>
     )
   }
+  const question =
+    mode === 'all'
+      ? `Generate summaries, themes, and tags for ${total} book${total === 1 ? '' : 's'}?`
+      : `Auto-assign tags for ${total} book${total === 1 ? '' : 's'}?`
+  const notes =
+    mode === 'all'
+      ? "We'll check Open Library and Google Books first (free) and fall back to the AI for anything they don't cover. Books that already have all three are skipped. Books with existing tags keep them."
+      : 'Each book gets the 2-4 most appropriate tags picked from your existing tag taxonomy. Books that already have tags are skipped.'
   return (
     <>
       <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-        Generate summaries and themes for{' '}
-        <strong>
-          {total} book{total === 1 ? '' : 's'}
-        </strong>
-        ?
+        {question}
       </p>
       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-        We'll check Open Library and Google Books first (free) and fall back to the AI for anything
-        they don't cover. Books that already have both are skipped. This may take several minutes —
-        you can cancel mid-batch.
+        {notes} This may take several minutes — you can cancel mid-batch.
       </p>
       <div className="flex gap-2 justify-end pt-2">
         <button
@@ -226,7 +293,7 @@ function ConfirmStage({
           className="text-sm px-4 py-2 rounded font-medium cursor-pointer"
           style={{ backgroundColor: 'var(--accent)', color: 'white' }}
         >
-          Generate
+          {mode === 'all' ? 'Generate' : 'Classify'}
         </button>
       </div>
     </>
@@ -279,10 +346,12 @@ function RunningStage({
 
 // ─── Done stage ────────────────────────────────────────────────────────
 function DoneStage({
+  mode,
   results,
   onClose,
 }: {
-  results: { summariesAdded: number; themesAdded: number; failed: number; cancelled: boolean }
+  mode: BatchMode
+  results: BatchResults
   onClose: () => void
 }) {
   return (
@@ -297,13 +366,21 @@ function DoneStage({
         className="text-sm rounded-lg p-3 space-y-1"
         style={{ backgroundColor: 'var(--bg-page)', color: 'var(--text-primary)' }}
       >
+        {mode === 'all' && (
+          <>
+            <li>
+              Generated <strong>{results.summariesAdded}</strong>{' '}
+              {results.summariesAdded === 1 ? 'summary' : 'summaries'}.
+            </li>
+            <li>
+              Generated <strong>{results.themesAdded}</strong>{' '}
+              {results.themesAdded === 1 ? 'theme list' : 'theme lists'}.
+            </li>
+          </>
+        )}
         <li>
-          Generated <strong>{results.summariesAdded}</strong>{' '}
-          {results.summariesAdded === 1 ? 'summary' : 'summaries'}.
-        </li>
-        <li>
-          Generated <strong>{results.themesAdded}</strong>{' '}
-          {results.themesAdded === 1 ? 'theme list' : 'theme lists'}.
+          Classified <strong>{results.taggedAdded}</strong>{' '}
+          {results.taggedAdded === 1 ? 'book' : 'books'}.
         </li>
         {results.failed > 0 && (
           <li style={{ color: '#7A2A2A' }}>
