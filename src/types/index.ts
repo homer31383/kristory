@@ -40,6 +40,16 @@ export interface Category {
   created_at: string
 }
 
+export type BookStatus = 'want' | 'reading' | 'read' | 'abandoned' | 'reference'
+export type BookFormat = 'physical' | 'ebook' | 'audiobook'
+
+export interface MediaTag {
+  id: string
+  name: string
+  category_type: string
+  created_at: string
+}
+
 export interface TaggedItem {
   id: string
   entry_id: string | null
@@ -55,10 +65,28 @@ export interface TaggedItem {
   instructions: string | null
   item_date: string | null
   created_at: string
+  // Library / Books rich fields (migration 030)
+  subtitle?: string | null
+  author?: string | null
+  status?: BookStatus | null
+  format?: BookFormat | null
+  start_date?: string | null
+  finish_date?: string | null
+  recommended_by?: string | null
+  themes?: string | null
+  summary?: string | null
+  what_stuck?: string | null
+  cover_url?: string | null
+  favorite?: boolean | null
+  hall_of_fame?: boolean | null
+  isbn?: string | null
+  page_count?: number | null
+  subcategory?: string | null
   category?: Category
   entry?: { entry_date: string }
   user?: { id: string; name: string }
   recipe_tags?: { tag: RecipeTag }[]
+  media_tags?: { tag: MediaTag }[]
   participants?: { user: User }[]
 }
 

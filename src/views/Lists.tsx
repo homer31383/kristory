@@ -6,6 +6,7 @@ import { useTrips, useSuggestTrips, useCreateTrip } from '../hooks/useTrips'
 import type { SuggestedTrip } from '../hooks/useTrips'
 import { useBabyProfile, useBabyMilestones } from '../hooks/useBaby'
 import { getStorageUrl } from '../lib/helpers'
+import { isLibraryCategory } from '../lib/constants'
 
 const DISMISSED_KEY = 'kristory-dismissed-trip-suggestions'
 
@@ -429,9 +430,9 @@ export default function Lists() {
             <div key={i} className="h-28 rounded-xl animate-pulse" style={{ backgroundColor: 'var(--bg-card)' }} />
           ))}
         </div>
-      ) : categoryCounts.length > 0 ? (
+      ) : categoryCounts.filter((cat) => !isLibraryCategory(cat.name)).length > 0 ? (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          {categoryCounts.map((cat) => (
+          {categoryCounts.filter((cat) => !isLibraryCategory(cat.name)).map((cat) => (
             <button
               key={cat.id}
               onClick={() => navigate(`/lists/${cat.id}`)}

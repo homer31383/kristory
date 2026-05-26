@@ -1,18 +1,29 @@
+/**
+ * The Library — personal cultural / experience log surface.
+ *
+ * Filename is still Explore.tsx and route is still /explore for back-compat
+ * (the rest of the app links here by that path). The label and content are
+ * now the Library — Hall of Fame, Currently Reading, and per-Library-category
+ * horizontal previews.
+ */
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { format, parse } from 'date-fns'
 import { useSearchEntries } from '../hooks/useEntries'
-import { useCategoryCounts } from '../hooks/useCategories'
 import { useDebouncedValue } from '../hooks/useDebounce'
 import { truncateText, getStorageUrl } from '../lib/helpers'
-import type { JournalEntry } from '../types'
+import { useHallOfFame, useCurrentlyReading, useLibraryCategoryPreviews } from '../hooks/useLibrary'
+import { BOOKS_CATEGORY_NAME } from '../lib/constants'
+import type { JournalEntry, TaggedItem } from '../types'
 
-export default function Explore() {
+export default function Library() {
   const navigate = useNavigate()
   const [searchInput, setSearchInput] = useState('')
   const debouncedQuery = useDebouncedValue(searchInput, 300)
   const { data: results = [], isLoading: searching } = useSearchEntries(debouncedQuery)
-  const { data: categoryCounts = [] } = useCategoryCounts()
+  const { data: hallOfFame = [] } = useHallOfFame()
+  const { data: currentlyReading = [] } = useCurrentlyReading()
+  const { data: previews = [] } = useLibraryCategoryPreviews()
 
   const isSearching = searchInput.trim().length > 0
 
@@ -22,7 +33,7 @@ export default function Explore() {
         className="text-2xl mb-4"
         style={{ fontFamily: "'Playfair Display', serif", fontWeight: 700, color: 'var(--text-primary)' }}
       >
-        Explore
+        The Library
       </h1>
 
       {/* Search */}
@@ -61,63 +72,277 @@ export default function Explore() {
         )}
       </div>
 
-      {/* Search Results */}
       {isSearching ? (
-        <div>
-          {searching ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-20 rounded-xl animate-pulse" style={{ backgroundColor: 'var(--bg-card)' }} />
-              ))}
-            </div>
-          ) : results.length > 0 ? (
-            <div className="space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-                {results.length} result{results.length !== 1 ? 's' : ''}
-              </p>
-              {results.map((entry) => (
-                <SearchResultCard key={entry.id} entry={entry} onClick={() => navigate(`/journal/${entry.entry_date}`)} />
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <div className="text-3xl mb-2">🔍</div>
+        <SearchResults
+          searching={searching}
+          query={debouncedQuery}
+          results={results}
+          onSelect={(date) => navigate(`/journal/${date}`)}
+        />
+      ) : (
+        <div className="space-y-8">
+          {hallOfFame.length > 0 && (
+            <HallOfFameRow
+              items={hallOfFame}
+              onSelect={(item) => navigateToItem(navigate, item)}
+            />
+          )}
+
+          {currentlyReading.length > 0 && (
+            <CategoryRow
+              title="Currently Reading"
+              items={currentlyReading}
+              onSelect={(item) => navigateToItem(navigate, item)}
+              onSeeAll={() => navigate('/library/books?status=reading')}
+              compact
+            />
+          )}
+
+          {previews.length === 0 && (
+            <div
+              className="rounded-xl border p-6 text-center"
+              style={{ borderColor: 'var(--border-card)', backgroundColor: 'var(--bg-card)' }}
+            >
+              <div className="text-3xl mb-2">📚</div>
               <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                No results found for "{debouncedQuery}"
+                Your library is empty. Create a "Books" category (or any of: Movies, TV Shows,
+                Restaurants, Music, Activities) from Lists to start logging.
               </p>
             </div>
           )}
-        </div>
-      ) : (
-        /* Browse by Category */
-        <div>
-          <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>
-            Browse by Category
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {categoryCounts.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => navigate(`/lists/${cat.id}`)}
-                className="rounded-xl border p-4 text-left transition-all duration-150 hover:shadow-md cursor-pointer"
-                style={{
-                  backgroundColor: 'var(--bg-card)',
-                  borderColor: 'var(--border-card)',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                }}
-              >
-                <div className="text-2xl mb-1">{cat.emoji}</div>
-                <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                  {cat.name}
-                </div>
-                <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                  {cat.count} item{cat.count !== 1 ? 's' : ''}
-                </div>
-              </button>
-            ))}
-          </div>
+
+          {previews.map(({ category, items }) => {
+            const isBooks = category.name.toLowerCase() === BOOKS_CATEGORY_NAME.toLowerCase()
+            const seeAllPath = isBooks ? '/library/books' : `/lists/${category.id}`
+            return (
+              <CategoryRow
+                key={category.id}
+                title={`${category.emoji ?? ''} ${category.name}`.trim()}
+                items={items}
+                onSelect={(item) => navigateToItem(navigate, item)}
+                onSeeAll={() => navigate(seeAllPath)}
+              />
+            )
+          })}
         </div>
       )}
+    </div>
+  )
+}
+
+function navigateToItem(navigate: ReturnType<typeof useNavigate>, item: TaggedItem) {
+  const isBook = item.category?.name?.toLowerCase() === BOOKS_CATEGORY_NAME.toLowerCase()
+  if (isBook) navigate(`/library/books/${item.id}`)
+  else navigate(`/items/${item.id}`)
+}
+
+// ─── Hall of Fame row ──────────────────────────────────────────────────
+function HallOfFameRow({
+  items,
+  onSelect,
+}: {
+  items: TaggedItem[]
+  onSelect: (item: TaggedItem) => void
+}) {
+  return (
+    <section>
+      <div className="flex items-baseline justify-between mb-3">
+        <h2
+          className="text-lg"
+          style={{
+            fontFamily: "'Playfair Display', serif",
+            fontWeight: 700,
+            color: 'var(--text-primary)',
+          }}
+        >
+          🏆 Hall of Fame
+        </h2>
+        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          {items.length}/20
+        </span>
+      </div>
+      <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 photo-scroll">
+        {items.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => onSelect(item)}
+            className="flex-shrink-0 w-28 text-left cursor-pointer"
+          >
+            <Cover item={item} sizeClass="w-28 h-40" highlight />
+            <div
+              className="text-xs mt-2 font-medium leading-tight line-clamp-2"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              {item.name}
+            </div>
+            {item.author && (
+              <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                {item.author}
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+// ─── Generic horizontal category row ───────────────────────────────────
+function CategoryRow({
+  title,
+  items,
+  onSelect,
+  onSeeAll,
+  compact,
+}: {
+  title: string
+  items: TaggedItem[]
+  onSelect: (item: TaggedItem) => void
+  onSeeAll: () => void
+  compact?: boolean
+}) {
+  if (items.length === 0) return null
+  const w = compact ? 'w-24 h-36' : 'w-24 h-36'
+  return (
+    <section>
+      <div className="flex items-baseline justify-between mb-3">
+        <h2
+          className="text-base"
+          style={{
+            fontFamily: "'Playfair Display', serif",
+            fontWeight: 600,
+            color: 'var(--text-primary)',
+          }}
+        >
+          {title}
+        </h2>
+        <button
+          onClick={onSeeAll}
+          className="text-xs font-medium cursor-pointer"
+          style={{ color: 'var(--accent)' }}
+        >
+          See all →
+        </button>
+      </div>
+      <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 photo-scroll">
+        {items.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => onSelect(item)}
+            className="flex-shrink-0 w-24 text-left cursor-pointer"
+          >
+            <Cover item={item} sizeClass={w} />
+            <div
+              className="text-xs mt-2 font-medium leading-tight line-clamp-2"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              {item.name}
+            </div>
+            {item.author && (
+              <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                {item.author}
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+// ─── Cover thumbnail (image when available, fallback card) ─────────────
+function Cover({
+  item,
+  sizeClass,
+  highlight,
+}: {
+  item: TaggedItem
+  sizeClass: string
+  highlight?: boolean
+}) {
+  const border = highlight ? '2px solid #C9A24B' : '1px solid var(--border-card)'
+  if (item.cover_url) {
+    return (
+      <div
+        className={`${sizeClass} rounded-lg overflow-hidden`}
+        style={{ border, backgroundColor: 'var(--bg-card)' }}
+      >
+        <img
+          src={item.cover_url}
+          alt=""
+          className="w-full h-full object-cover"
+          loading="lazy"
+        />
+      </div>
+    )
+  }
+  // Fallback: emoji + first letter card
+  return (
+    <div
+      className={`${sizeClass} rounded-lg flex flex-col items-center justify-center text-center px-2`}
+      style={{ border, backgroundColor: 'var(--bg-card)' }}
+    >
+      <div className="text-2xl mb-1">{item.category?.emoji ?? '📄'}</div>
+      <div
+        className="text-[11px] font-medium leading-tight line-clamp-3"
+        style={{ color: 'var(--text-secondary)' }}
+      >
+        {item.name}
+      </div>
+    </div>
+  )
+}
+
+// ─── Search results (entries) ──────────────────────────────────────────
+function SearchResults({
+  searching,
+  query,
+  results,
+  onSelect,
+}: {
+  searching: boolean
+  query: string
+  results: JournalEntry[]
+  onSelect: (date: string) => void
+}) {
+  if (searching) {
+    return (
+      <div className="space-y-3">
+        {[1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="h-20 rounded-xl animate-pulse"
+            style={{ backgroundColor: 'var(--bg-card)' }}
+          />
+        ))}
+      </div>
+    )
+  }
+  if (results.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <div className="text-3xl mb-2">🔍</div>
+        <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+          No results found for "{query}"
+        </p>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-3">
+      <p
+        className="text-xs font-semibold uppercase tracking-wider"
+        style={{ color: 'var(--text-muted)' }}
+      >
+        {results.length} result{results.length !== 1 ? 's' : ''}
+      </p>
+      {results.map((entry) => (
+        <SearchResultCard
+          key={entry.id}
+          entry={entry}
+          onClick={() => onSelect(entry.entry_date)}
+        />
+      ))}
     </div>
   )
 }
@@ -156,7 +381,10 @@ function SearchResultCard({ entry, onClick }: { entry: JournalEntry; onClick: ()
                 <span
                   key={tag.id}
                   className="text-xs px-2 py-0.5 rounded-full"
-                  style={{ backgroundColor: 'var(--bg-page)', color: 'var(--text-secondary)' }}
+                  style={{
+                    backgroundColor: 'var(--bg-page)',
+                    color: 'var(--text-secondary)',
+                  }}
                 >
                   {tag.category?.emoji} {tag.name}
                 </span>
@@ -166,7 +394,12 @@ function SearchResultCard({ entry, onClick }: { entry: JournalEntry; onClick: ()
         </div>
         {firstPhoto && (
           <div className="w-14 h-14 rounded-lg overflow-hidden flex-shrink-0">
-            <img src={getStorageUrl(firstPhoto.storage_path)} alt="" className="w-full h-full object-cover" loading="lazy" />
+            <img
+              src={getStorageUrl(firstPhoto.storage_path)}
+              alt=""
+              className="w-full h-full object-cover"
+              loading="lazy"
+            />
           </div>
         )}
       </div>
