@@ -8,6 +8,8 @@ import UserPicker from './views/UserPicker'
 import Journal from './views/Journal'
 import EntryDetail from './views/EntryDetail'
 import Explore from './views/Explore'
+import Books from './views/Books'
+import BookDetail from './views/BookDetail'
 import Lists from './views/Lists'
 import CategoryDetail from './views/CategoryDetail'
 import BookOfFood from './views/BookOfFood'
@@ -69,6 +71,9 @@ function AppRoutes() {
         <Route path="/journal" element={<Journal />} />
         <Route path="/journal/:date" element={<EntryDetail />} />
         <Route path="/explore" element={<Explore />} />
+        <Route path="/library" element={<Navigate to="/explore" replace />} />
+        <Route path="/library/books" element={<Books />} />
+        <Route path="/library/books/:bookId" element={<BookDetail />} />
         <Route path="/lists" element={<Lists />} />
         <Route path="/lists/:categoryId" element={<CategoryDetail />} />
         <Route path="/book-of-food" element={<BookOfFood />} />
