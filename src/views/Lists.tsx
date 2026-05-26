@@ -6,7 +6,14 @@ import { useTrips, useSuggestTrips, useCreateTrip } from '../hooks/useTrips'
 import type { SuggestedTrip } from '../hooks/useTrips'
 import { useBabyProfile, useBabyMilestones } from '../hooks/useBaby'
 import { getStorageUrl } from '../lib/helpers'
-import { isLibraryCategory } from '../lib/constants'
+import {
+  isLibraryCategory,
+  DEFAULT_LIST_CATEGORIES,
+  matchDefaultSlot,
+  type DefaultCategory,
+} from '../lib/constants'
+import { useCreateCategory } from '../hooks/useCategories'
+import { useUser } from '../hooks/useUser'
 
 const DISMISSED_KEY = 'kristory-dismissed-trip-suggestions'
 
@@ -206,16 +213,41 @@ export default function Lists() {
   const { data: trips = [] } = useTrips()
   const { data: suggestions = [], isLoading: suggestionsLoading } = useSuggestTrips()
   const createTrip = useCreateTrip()
+  const createCategory = useCreateCategory()
+  const { user } = useUser()
   const [showTrips, setShowTrips] = useState(() => loadOpenState('trips'))
   const [showBaby, setShowBaby] = useState(() => loadOpenState('baby'))
   const [showCategories, setShowCategories] = useState(() => loadOpenState('categories'))
   const [showSuggestions, setShowSuggestions] = useState(true)
   const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissed())
   const [creatingId, setCreatingId] = useState<string | null>(null)
+  const [creatingCatName, setCreatingCatName] = useState<string | null>(null)
 
   useEffect(() => { saveOpenState('trips', showTrips) }, [showTrips])
   useEffect(() => { saveOpenState('baby', showBaby) }, [showBaby])
   useEffect(() => { saveOpenState('categories', showCategories) }, [showCategories])
+
+  /** Open a category card: navigate if it exists, lazily create otherwise. */
+  async function openListSlot(slot: DefaultCategory, dbId: string | null) {
+    if (dbId) {
+      navigate(`/lists/${dbId}`)
+      return
+    }
+    if (!user) return
+    setCreatingCatName(slot.name)
+    try {
+      const created = await createCategory.mutateAsync({
+        name: slot.name,
+        emoji: slot.emoji,
+        userId: user.id,
+      })
+      navigate(`/lists/${created.id}`)
+    } catch {
+      // ignore; the user can tap again
+    } finally {
+      setCreatingCatName(null)
+    }
+  }
 
   // Persist dismissed to localStorage whenever it changes
   useEffect(() => {
@@ -456,9 +488,55 @@ export default function Lists() {
       {/* Baby section */}
       <BabyCard open={showBaby} onToggle={() => setShowBaby((v) => !v)} />
 
-      {/* Categories grid */}
+      {/* Categories grid — defaults always show, even with 0 items. */}
       {(() => {
-        const visibleCats = categoryCounts.filter((cat) => !isLibraryCategory(cat.name))
+        const dbNonLibrary = categoryCounts.filter((cat) => !isLibraryCategory(cat.name))
+        type Card = {
+          key: string
+          dbId: string | null
+          slot: DefaultCategory
+          name: string
+          emoji: string
+          count: number
+        }
+        const cards: Card[] = []
+        // Defaults first, in the canonical order — synthetic if missing.
+        for (const slot of DEFAULT_LIST_CATEGORIES) {
+          const match = matchDefaultSlot(slot, dbNonLibrary)
+          if (match) {
+            cards.push({
+              key: match.id,
+              dbId: match.id,
+              slot,
+              name: match.name,
+              emoji: match.emoji ?? slot.emoji,
+              count: match.count,
+            })
+          } else {
+            cards.push({
+              key: 'default:' + slot.name,
+              dbId: null,
+              slot,
+              name: slot.name,
+              emoji: slot.emoji,
+              count: 0,
+            })
+          }
+        }
+        // Then any other non-Library DB categories that aren't already covered.
+        const usedIds = new Set(cards.map((c) => c.dbId).filter((v): v is string => v !== null))
+        for (const cat of dbNonLibrary) {
+          if (usedIds.has(cat.id)) continue
+          cards.push({
+            key: cat.id,
+            dbId: cat.id,
+            slot: { name: cat.name, emoji: cat.emoji ?? '📁' },
+            name: cat.name,
+            emoji: cat.emoji ?? '📁',
+            count: cat.count,
+          })
+        }
+
         return (
           <div className="mb-5">
             <button
@@ -476,7 +554,7 @@ export default function Lists() {
                   Categories
                 </div>
                 <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                  {visibleCats.length} {visibleCats.length === 1 ? 'category' : 'categories'}
+                  {cards.length} {cards.length === 1 ? 'category' : 'categories'}
                 </div>
               </div>
               <svg
@@ -499,35 +577,33 @@ export default function Lists() {
                       <div key={i} className="h-28 rounded-xl animate-pulse" style={{ backgroundColor: 'var(--bg-card)' }} />
                     ))}
                   </div>
-                ) : visibleCats.length > 0 ? (
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {visibleCats.map((cat) => (
-                      <button
-                        key={cat.id}
-                        onClick={() => navigate(`/lists/${cat.id}`)}
-                        className="rounded-xl border p-5 text-left transition-all duration-150 hover:shadow-md cursor-pointer"
-                        style={{
-                          backgroundColor: 'var(--bg-card)',
-                          borderColor: 'var(--border-card)',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                        }}
-                      >
-                        <div className="text-3xl mb-2">{cat.emoji}</div>
-                        <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                          {cat.name}
-                        </div>
-                        <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                          {cat.count} item{cat.count !== 1 ? 's' : ''}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
                 ) : (
-                  <div className="text-center py-10">
-                    <div className="text-3xl mb-2">📋</div>
-                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                      Categories will appear here when you start tagging items in your journal entries.
-                    </p>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {cards.map((c) => {
+                      const busy = creatingCatName === c.slot.name
+                      return (
+                        <button
+                          key={c.key}
+                          onClick={() => openListSlot(c.slot, c.dbId)}
+                          disabled={busy}
+                          className="rounded-xl border p-5 text-left transition-all duration-150 hover:shadow-md cursor-pointer"
+                          style={{
+                            backgroundColor: 'var(--bg-card)',
+                            borderColor: 'var(--border-card)',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                            opacity: busy ? 0.6 : 1,
+                          }}
+                        >
+                          <div className="text-3xl mb-2">{c.emoji}</div>
+                          <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                            {c.name}
+                          </div>
+                          <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                            {busy ? 'Creating…' : `${c.count} item${c.count !== 1 ? 's' : ''}`}
+                          </div>
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
               </div>

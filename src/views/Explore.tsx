@@ -13,11 +13,21 @@ import { useSearchEntries } from '../hooks/useEntries'
 import { useDebouncedValue } from '../hooks/useDebounce'
 import { truncateText, getStorageUrl } from '../lib/helpers'
 import { useHallOfFame, useCurrentlyReading, useLibraryCategoryPreviews } from '../hooks/useLibrary'
-import { BOOKS_CATEGORY_NAME } from '../lib/constants'
-import type { JournalEntry, TaggedItem } from '../types'
+import { useCreateCategory } from '../hooks/useCategories'
+import { useUser } from '../hooks/useUser'
+import {
+  BOOKS_CATEGORY_NAME,
+  DEFAULT_LIBRARY_CATEGORIES,
+  matchDefaultSlot,
+  type DefaultCategory,
+} from '../lib/constants'
+import type { Category, JournalEntry, TaggedItem } from '../types'
 
 export default function Library() {
   const navigate = useNavigate()
+  const { user } = useUser()
+  const createCategory = useCreateCategory()
+  const [creatingName, setCreatingName] = useState<string | null>(null)
   const [searchInput, setSearchInput] = useState('')
   const debouncedQuery = useDebouncedValue(searchInput, 300)
   const { data: results = [], isLoading: searching } = useSearchEntries(debouncedQuery)
@@ -26,6 +36,34 @@ export default function Library() {
   const { data: previews = [] } = useLibraryCategoryPreviews()
 
   const isSearching = searchInput.trim().length > 0
+
+  /**
+   * Resolve a default Library slot to a real category, creating it lazily
+   * if it doesn't exist yet, then navigate. Books has its own surface;
+   * everything else uses the generic /lists/:id detail page.
+   */
+  async function openSlot(slot: DefaultCategory, match: Category | null) {
+    const isBooks = slot.name === BOOKS_CATEGORY_NAME
+    if (match) {
+      navigate(isBooks ? '/library/books' : `/lists/${match.id}`)
+      return
+    }
+    if (!user) return
+    setCreatingName(slot.name)
+    try {
+      const created = await createCategory.mutateAsync({
+        name: slot.name,
+        emoji: slot.emoji,
+        userId: user.id,
+      })
+      navigate(isBooks ? '/library/books' : `/lists/${created.id}`)
+    } catch {
+      // The category-creation mutation surfaces errors via toasts elsewhere;
+      // we don't navigate on failure.
+    } finally {
+      setCreatingName(null)
+    }
+  }
 
   return (
     <div className="pb-24">
@@ -98,49 +136,49 @@ export default function Library() {
             />
           )}
 
-          {previews.length === 0 && (
-            <div
-              className="rounded-xl border p-6 text-center"
-              style={{ borderColor: 'var(--border-card)', backgroundColor: 'var(--bg-card)' }}
+          <section>
+            <h2
+              className="text-base mb-3"
+              style={{
+                fontFamily: "'Playfair Display', serif",
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+              }}
             >
-              <div className="text-3xl mb-2">📚</div>
-              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                Your library is empty. Create a "Books" category (or any of: Movies, TV Shows,
-                Restaurants, Music, Activities) from Lists to start logging.
-              </p>
+              Categories
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {DEFAULT_LIBRARY_CATEGORIES.map((slot) => {
+                // Match by canonical name or any alias so a legacy "Music"
+                // still fills the new "Music/Concerts" slot.
+                const matched = matchDefaultSlot(
+                  slot,
+                  previews.map((p) => p.category),
+                )
+                const matchedSlot = matched
+                  ? previews.find((p) => p.category.id === matched.id) ?? null
+                  : null
+                const count = matchedSlot?.count ?? 0
+                const items = matchedSlot?.items ?? []
+                // Prefer the user's chosen emoji if they renamed the category,
+                // otherwise fall back to the canonical default emoji.
+                const emoji = matched?.emoji ?? slot.emoji
+                const displayName = matched?.name ?? slot.name
+                const busy = creatingName === slot.name
+                return (
+                  <LibraryCategoryCard
+                    key={slot.name}
+                    emoji={emoji}
+                    name={displayName}
+                    count={count}
+                    previewItems={items}
+                    busy={busy}
+                    onClick={() => openSlot(slot, matched ?? null)}
+                  />
+                )
+              })}
             </div>
-          )}
-
-          {previews.length > 0 && (
-            <section>
-              <h2
-                className="text-base mb-3"
-                style={{
-                  fontFamily: "'Playfair Display', serif",
-                  fontWeight: 600,
-                  color: 'var(--text-primary)',
-                }}
-              >
-                Categories
-              </h2>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {previews.map(({ category, items, count }) => {
-                  const isBooks = category.name.toLowerCase() === BOOKS_CATEGORY_NAME.toLowerCase()
-                  const target = isBooks ? '/library/books' : `/lists/${category.id}`
-                  return (
-                    <LibraryCategoryCard
-                      key={category.id}
-                      emoji={category.emoji ?? '📄'}
-                      name={category.name}
-                      count={count}
-                      previewItems={items}
-                      onClick={() => navigate(target)}
-                    />
-                  )
-                })}
-              </div>
-            </section>
-          )}
+          </section>
         </div>
       )}
     </div>
@@ -153,24 +191,28 @@ function LibraryCategoryCard({
   name,
   count,
   previewItems,
+  busy,
   onClick,
 }: {
   emoji: string
   name: string
   count: number
   previewItems: TaggedItem[]
+  busy?: boolean
   onClick: () => void
 }) {
   const previews = previewItems.slice(0, 3)
   return (
     <button
       onClick={onClick}
+      disabled={busy}
       className="rounded-xl border p-4 text-left transition-all duration-150 hover:shadow-md cursor-pointer flex flex-col"
       style={{
         backgroundColor: 'var(--bg-card)',
         borderColor: 'var(--border-card)',
         boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
         minHeight: '8.5rem',
+        opacity: busy ? 0.6 : 1,
       }}
     >
       <div className="flex items-start justify-between mb-2">
@@ -179,7 +221,7 @@ function LibraryCategoryCard({
           className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
           style={{ backgroundColor: 'var(--bg-page)', color: 'var(--text-muted)' }}
         >
-          {count}
+          {busy ? '…' : count}
         </div>
       </div>
       <div className="text-sm font-semibold mb-1.5" style={{ color: 'var(--text-primary)' }}>
@@ -188,7 +230,7 @@ function LibraryCategoryCard({
       <ul className="space-y-0.5 flex-1">
         {previews.length === 0 ? (
           <li className="text-[11px] italic" style={{ color: 'var(--text-muted)' }}>
-            Empty
+            {count === 0 ? '0 items' : 'Empty'}
           </li>
         ) : (
           previews.map((it) => (

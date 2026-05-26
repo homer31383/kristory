@@ -78,6 +78,11 @@ export function useCreateCategory() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['categories'] })
       queryClient.invalidateQueries({ queryKey: ['category-counts'] })
+      // Library / Books surfaces resolve categories by name — invalidate
+      // them too so a freshly-created Books category becomes the live
+      // target without a hard reload.
+      queryClient.invalidateQueries({ queryKey: ['books-category-id'] })
+      queryClient.invalidateQueries({ queryKey: ['library-previews'] })
     },
   })
 }
