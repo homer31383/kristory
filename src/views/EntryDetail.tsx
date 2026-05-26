@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useEntry, useCreateEntry, useUpsertSection, useUploadPhoto, useDeletePhoto, useAddTaggedItem, useDeleteTaggedItem } from '../hooks/useEntries'
 import { useTrips, useAddEntryToTrip, useRemoveEntryFromTrip } from '../hooks/useTrips'
-import { useBabyMilestones, useCreateBabyMilestone, PREGNANCY_MILESTONES, FIRST_YEAR_MILESTONES } from '../hooks/useBaby'
+import { useBabyMilestones, useCreateBabyMilestone, useDeleteBabyMilestone, PREGNANCY_MILESTONES, FIRST_YEAR_MILESTONES } from '../hooks/useBaby'
 import { useFamilyPostForEntry, useCreateFamilyPost, useUpdateFamilyPost, useDeleteFamilyPost } from '../hooks/useFamilyFeed'
 import { useUser } from '../hooks/useUser'
 import { formatDateHeading, getStorageUrl, resizeImage, getTodayString } from '../lib/helpers'
@@ -41,6 +41,7 @@ export default function EntryDetail() {
   const removeEntryFromTrip = useRemoveEntryFromTrip()
   const { data: babyMilestones = [] } = useBabyMilestones()
   const createBabyMilestone = useCreateBabyMilestone()
+  const deleteBabyMilestone = useDeleteBabyMilestone()
   const { data: familyPost, isLoading: familyPostLoading } = useFamilyPostForEntry(entry?.id)
   const createFamilyPost = useCreateFamilyPost()
   const updateFamilyPost = useUpdateFamilyPost()
@@ -737,6 +738,25 @@ export default function EntryDetail() {
             <div className="flex-1">
               <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{m.title}</span>
             </div>
+            <button
+              onClick={async () => {
+                if (confirm(`Mark "${m.title}" as incomplete?`)) {
+                  // Deleting the row drops the date, notes, photo, and the
+                  // entry link in one go. baby_milestones.entry_id has
+                  // ON DELETE SET NULL, but we're deleting the milestone
+                  // row itself — the journal entry stays untouched. The
+                  // preset (if any) will re-appear as unchecked in the
+                  // Baby milestones view on next render.
+                  await deleteBabyMilestone.mutateAsync(m.id)
+                }
+              }}
+              disabled={deleteBabyMilestone.isPending}
+              className="text-xs font-medium cursor-pointer disabled:opacity-50"
+              style={{ color: 'var(--text-secondary)' }}
+              title="Mark as incomplete and unlink from this entry"
+            >
+              ↩ Mark as incomplete
+            </button>
           </div>
         ))}
       </div>
