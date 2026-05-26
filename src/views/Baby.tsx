@@ -956,6 +956,7 @@ function MilestoneGroup({
                   <CompletedMilestoneRow
                     key={existing.id}
                     milestone={existing}
+                    isPreset
                     expanded={expandedMilestone === existing.id}
                     onToggle={() => setExpandedMilestone(expandedMilestone === existing.id ? null : existing.id)}
                     editingMilestoneId={editingMilestoneId}
@@ -1008,6 +1009,7 @@ function CompletedMilestoneRow({
   saveEditMilestone,
   setEditingMilestoneId,
   deleteMilestone,
+  isPreset = false,
 }: {
   milestone: BabyMilestone
   expanded: boolean
@@ -1021,6 +1023,11 @@ function CompletedMilestoneRow({
   saveEditMilestone: () => void
   setEditingMilestoneId: (id: string | null) => void
   deleteMilestone: { mutateAsync: (id: string) => Promise<void> }
+  /** True when this row represents a preset (PREGNANCY_MILESTONES /
+   *  FIRST_YEAR_MILESTONES). Presets get a "Mark as incomplete" action
+   *  that deletes the row so the checklist reverts to the unchecked
+   *  state; custom milestones don't (no preset to revert to). */
+  isPreset?: boolean
 }) {
   const d = parse(milestone.milestone_date, 'yyyy-MM-dd', new Date())
   const isEditing = editingMilestoneId === milestone.id
@@ -1114,7 +1121,7 @@ function CompletedMilestoneRow({
                     <img src={getStorageUrl(milestone.photo_path)} alt="" className="w-full h-full object-cover" loading="lazy" />
                   </div>
                 )}
-                <div className="flex gap-2">
+                <div className="flex gap-3 flex-wrap">
                   <button
                     onClick={() => startEditMilestone(milestone)}
                     className="text-xs font-medium cursor-pointer"
@@ -1122,6 +1129,22 @@ function CompletedMilestoneRow({
                   >
                     Edit
                   </button>
+                  {isPreset && (
+                    <button
+                      onClick={async () => {
+                        if (confirm(`Mark "${milestone.title}" as incomplete?`)) {
+                          // Deleting the row clears the milestone_date,
+                          // notes, and photo and lets the preset render
+                          // as unchecked again on the next render.
+                          await deleteMilestone.mutateAsync(milestone.id)
+                        }
+                      }}
+                      className="text-xs font-medium cursor-pointer"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
+                      ↩ Mark as incomplete
+                    </button>
+                  )}
                   <button
                     onClick={async () => {
                       if (confirm(`Remove "${milestone.title}" milestone?`)) {
