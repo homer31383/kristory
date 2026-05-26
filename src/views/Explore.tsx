@@ -111,22 +111,103 @@ export default function Library() {
             </div>
           )}
 
-          {previews.map(({ category, items }) => {
-            const isBooks = category.name.toLowerCase() === BOOKS_CATEGORY_NAME.toLowerCase()
-            const seeAllPath = isBooks ? '/library/books' : `/lists/${category.id}`
-            return (
-              <CategoryRow
-                key={category.id}
-                title={`${category.emoji ?? ''} ${category.name}`.trim()}
-                items={items}
-                onSelect={(item) => navigateToItem(navigate, item)}
-                onSeeAll={() => navigate(seeAllPath)}
-              />
-            )
-          })}
+          {previews.length > 0 && (
+            <section>
+              <h2
+                className="text-base mb-3"
+                style={{
+                  fontFamily: "'Playfair Display', serif",
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                }}
+              >
+                Categories
+              </h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {previews.map(({ category, items, count }) => {
+                  const isBooks = category.name.toLowerCase() === BOOKS_CATEGORY_NAME.toLowerCase()
+                  const target = isBooks ? '/library/books' : `/lists/${category.id}`
+                  return (
+                    <LibraryCategoryCard
+                      key={category.id}
+                      emoji={category.emoji ?? '📄'}
+                      name={category.name}
+                      count={count}
+                      previewItems={items}
+                      onClick={() => navigate(target)}
+                    />
+                  )
+                })}
+              </div>
+            </section>
+          )}
         </div>
       )}
     </div>
+  )
+}
+
+// ─── Tappable category card with text preview of recent items ─────────
+function LibraryCategoryCard({
+  emoji,
+  name,
+  count,
+  previewItems,
+  onClick,
+}: {
+  emoji: string
+  name: string
+  count: number
+  previewItems: TaggedItem[]
+  onClick: () => void
+}) {
+  const previews = previewItems.slice(0, 3)
+  return (
+    <button
+      onClick={onClick}
+      className="rounded-xl border p-4 text-left transition-all duration-150 hover:shadow-md cursor-pointer flex flex-col"
+      style={{
+        backgroundColor: 'var(--bg-card)',
+        borderColor: 'var(--border-card)',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+        minHeight: '8.5rem',
+      }}
+    >
+      <div className="flex items-start justify-between mb-2">
+        <div className="text-2xl leading-none">{emoji}</div>
+        <div
+          className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+          style={{ backgroundColor: 'var(--bg-page)', color: 'var(--text-muted)' }}
+        >
+          {count}
+        </div>
+      </div>
+      <div className="text-sm font-semibold mb-1.5" style={{ color: 'var(--text-primary)' }}>
+        {name}
+      </div>
+      <ul className="space-y-0.5 flex-1">
+        {previews.length === 0 ? (
+          <li className="text-[11px] italic" style={{ color: 'var(--text-muted)' }}>
+            Empty
+          </li>
+        ) : (
+          previews.map((it) => (
+            <li
+              key={it.id}
+              className="text-[11px] truncate leading-snug"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              {it.name}
+            </li>
+          ))
+        )}
+      </ul>
+      {count > previews.length && (
+        <div className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+          + {count - previews.length} more
+        </div>
+      )}
+    </button>
   )
 }
 

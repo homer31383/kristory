@@ -23,6 +23,33 @@ function saveDismissed(ids: Set<string>) {
   localStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids]))
 }
 
+/**
+ * Lists sections collapse/expand state — defaults to collapsed (false). We
+ * persist per-section open state so a user who keeps Trips open doesn't
+ * have to re-open it every visit.
+ */
+const LISTS_OPEN_KEY = 'kristory-lists-open'
+function loadOpenState(id: string): boolean {
+  try {
+    const raw = localStorage.getItem(LISTS_OPEN_KEY)
+    if (!raw) return false
+    const parsed = JSON.parse(raw) as Record<string, boolean>
+    return !!parsed[id]
+  } catch {
+    return false
+  }
+}
+function saveOpenState(id: string, open: boolean) {
+  try {
+    const raw = localStorage.getItem(LISTS_OPEN_KEY)
+    const parsed = (raw ? JSON.parse(raw) : {}) as Record<string, boolean>
+    parsed[id] = open
+    localStorage.setItem(LISTS_OPEN_KEY, JSON.stringify(parsed))
+  } catch {
+    // ignore
+  }
+}
+
 function SuggestedTripCard({
   suggestion,
   onConfirm,
@@ -179,10 +206,16 @@ export default function Lists() {
   const { data: trips = [] } = useTrips()
   const { data: suggestions = [], isLoading: suggestionsLoading } = useSuggestTrips()
   const createTrip = useCreateTrip()
-  const [showTrips, setShowTrips] = useState(true)
+  const [showTrips, setShowTrips] = useState(() => loadOpenState('trips'))
+  const [showBaby, setShowBaby] = useState(() => loadOpenState('baby'))
+  const [showCategories, setShowCategories] = useState(() => loadOpenState('categories'))
   const [showSuggestions, setShowSuggestions] = useState(true)
   const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissed())
   const [creatingId, setCreatingId] = useState<string | null>(null)
+
+  useEffect(() => { saveOpenState('trips', showTrips) }, [showTrips])
+  useEffect(() => { saveOpenState('baby', showBaby) }, [showBaby])
+  useEffect(() => { saveOpenState('categories', showCategories) }, [showCategories])
 
   // Persist dismissed to localStorage whenever it changes
   useEffect(() => {
@@ -421,54 +454,92 @@ export default function Lists() {
       </div>
 
       {/* Baby section */}
-      <BabyCard />
+      <BabyCard open={showBaby} onToggle={() => setShowBaby((v) => !v)} />
 
       {/* Categories grid */}
-      {isLoading ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="h-28 rounded-xl animate-pulse" style={{ backgroundColor: 'var(--bg-card)' }} />
-          ))}
-        </div>
-      ) : categoryCounts.filter((cat) => !isLibraryCategory(cat.name)).length > 0 ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          {categoryCounts.filter((cat) => !isLibraryCategory(cat.name)).map((cat) => (
+      {(() => {
+        const visibleCats = categoryCounts.filter((cat) => !isLibraryCategory(cat.name))
+        return (
+          <div className="mb-5">
             <button
-              key={cat.id}
-              onClick={() => navigate(`/lists/${cat.id}`)}
-              className="rounded-xl border p-5 text-left transition-all duration-150 hover:shadow-md cursor-pointer"
+              onClick={() => setShowCategories(!showCategories)}
+              className="w-full text-left rounded-xl border p-4 flex items-center gap-3 transition-all duration-150 hover:shadow-md cursor-pointer"
               style={{
                 backgroundColor: 'var(--bg-card)',
                 borderColor: 'var(--border-card)',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
               }}
             >
-              <div className="text-3xl mb-2">{cat.emoji}</div>
-              <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                {cat.name}
+              <span className="text-2xl">📋</span>
+              <div className="flex-1">
+                <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Categories
+                </div>
+                <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  {visibleCats.length} {visibleCats.length === 1 ? 'category' : 'categories'}
+                </div>
               </div>
-              <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                {cat.count} item{cat.count !== 1 ? 's' : ''}
-              </div>
+              <svg
+                className="w-4 h-4 transition-transform duration-200"
+                style={{ color: 'var(--text-muted)', transform: showCategories ? 'rotate(0deg)' : 'rotate(-90deg)' }}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
             </button>
-          ))}
-        </div>
-      ) : (
-        <div className="text-center py-16">
-          <div className="text-4xl mb-3">📋</div>
-          <h3 className="text-lg font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
-            No categories yet
-          </h3>
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Categories will appear here when you start tagging items in your journal entries.
-          </p>
-        </div>
-      )}
+
+            <div className={`collapsible-content ${showCategories ? 'open' : ''}`}>
+              <div className="mt-2">
+                {isLoading ? (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {[1, 2, 3, 4, 5, 6].map((i) => (
+                      <div key={i} className="h-28 rounded-xl animate-pulse" style={{ backgroundColor: 'var(--bg-card)' }} />
+                    ))}
+                  </div>
+                ) : visibleCats.length > 0 ? (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {visibleCats.map((cat) => (
+                      <button
+                        key={cat.id}
+                        onClick={() => navigate(`/lists/${cat.id}`)}
+                        className="rounded-xl border p-5 text-left transition-all duration-150 hover:shadow-md cursor-pointer"
+                        style={{
+                          backgroundColor: 'var(--bg-card)',
+                          borderColor: 'var(--border-card)',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                        }}
+                      >
+                        <div className="text-3xl mb-2">{cat.emoji}</div>
+                        <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                          {cat.name}
+                        </div>
+                        <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                          {cat.count} item{cat.count !== 1 ? 's' : ''}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-10">
+                    <div className="text-3xl mb-2">📋</div>
+                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      Categories will appear here when you start tagging items in your journal entries.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
 
-function BabyCard() {
+function BabyCard({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const navigate = useNavigate()
   const { data: profile } = useBabyProfile()
   const { data: milestones = [] } = useBabyMilestones()
@@ -490,10 +561,12 @@ function BabyCard() {
     return `${milestones.length} milestone${milestones.length !== 1 ? 's' : ''}`
   })()
 
+  const recent = milestones.slice(0, 3)
+
   return (
     <div className="mb-5">
       <button
-        onClick={() => navigate('/baby')}
+        onClick={onToggle}
         className="w-full text-left rounded-xl border p-4 flex items-center gap-3 transition-all duration-150 hover:shadow-md cursor-pointer"
         style={{
           backgroundColor: '#FFF8E7',
@@ -511,13 +584,53 @@ function BabyCard() {
           </div>
         </div>
         <svg
-          className="w-4 h-4"
-          style={{ color: 'var(--text-muted)' }}
+          className="w-4 h-4 transition-transform duration-200"
+          style={{ color: 'var(--text-muted)', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)' }}
           fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
         >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
         </svg>
       </button>
+
+      <div className={`collapsible-content ${open ? 'open' : ''}`}>
+        <div className="mt-2 space-y-2">
+          {recent.length > 0 ? (
+            <ul className="space-y-1.5">
+              {recent.map((m) => {
+                const d = parse(m.milestone_date, 'yyyy-MM-dd', new Date())
+                return (
+                  <li
+                    key={m.id}
+                    className="rounded-lg border p-2.5 flex items-start gap-2"
+                    style={{
+                      backgroundColor: 'var(--bg-card)',
+                      borderColor: 'var(--border-card)',
+                    }}
+                  >
+                    <span className="text-xs flex-shrink-0 w-14 font-medium" style={{ color: 'var(--text-muted)' }}>
+                      {format(d, 'MMM d')}
+                    </span>
+                    <span className="text-xs" style={{ color: 'var(--text-primary)' }}>
+                      {m.title}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <div className="text-xs px-2 py-3 text-center" style={{ color: 'var(--text-muted)' }}>
+              No milestones logged yet.
+            </div>
+          )}
+          <button
+            onClick={() => navigate('/baby')}
+            className="w-full py-2 rounded-lg text-xs font-medium cursor-pointer"
+            style={{ backgroundColor: 'var(--accent)', color: 'white' }}
+          >
+            Open Baby →
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

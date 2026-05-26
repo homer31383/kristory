@@ -123,17 +123,21 @@ export function useLibraryCategoryPreviews() {
         lowerNames.includes((c.name ?? '').toLowerCase()),
       ) as Category[]
 
-      // Pull recent items for each in parallel.
+      // Pull recent items + exact count for each in parallel.
       const previews = await Promise.all(
         libraryCats.map(async (cat) => {
-          const { data, error } = await supabase
+          const { data, count, error } = await supabase
             .from('tagged_items')
-            .select(BOOK_SELECT)
+            .select(BOOK_SELECT, { count: 'exact' })
             .eq('category_id', cat.id)
             .order('created_at', { ascending: false })
-            .limit(10)
+            .limit(3)
           if (error) throw error
-          return { category: cat, items: (data ?? []) as TaggedItem[] }
+          return {
+            category: cat,
+            items: (data ?? []) as TaggedItem[],
+            count: count ?? 0,
+          }
         }),
       )
       return previews
