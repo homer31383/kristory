@@ -108,19 +108,27 @@ function RsvpForm({ onSuccess }: { onSuccess: (status: string) => void }) {
 function PhotoSection({ photos }: { photos: BabyShowerPhoto[] }) {
   const queryClient = useQueryClient(); const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false); const [uploadedBy, setUploadedBy] = useState(''); const [fullscreenUrl, setFullscreenUrl] = useState<string | null>(null)
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files; if (!files || files.length === 0) return; setUploading(true)
+  const [dragOver, setDragOver] = useState(false)
+  const uploadFiles = async (files: File[]) => {
+    if (files.length === 0 || uploading) return; setUploading(true)
     // Guest shower photos are intentionally uploaded at full original resolution — no resizeImage.
-    try { for (const file of Array.from(files)) { const ext = /\.([a-zA-Z0-9]+)$/.exec(file.name)?.[1]?.toLowerCase() || 'jpg'; const path = `shower-photos/${crypto.randomUUID()}.${ext}`; const { error: upErr } = await supabase.storage.from('kristory-photos').upload(path, file, { contentType: file.type || 'image/jpeg' }); if (upErr) throw upErr; const { error: dbErr } = await supabase.from('baby_shower_photos').insert({ storage_path: path, uploaded_by: uploadedBy.trim() || null }); if (dbErr) throw dbErr }; queryClient.invalidateQueries({ queryKey: ['shower-photos'] }); setUploadedBy('') }
+    try { for (const file of files) { const ext = /\.([a-zA-Z0-9]+)$/.exec(file.name)?.[1]?.toLowerCase() || 'jpg'; const path = `shower-photos/${crypto.randomUUID()}.${ext}`; const { error: upErr } = await supabase.storage.from('kristory-photos').upload(path, file, { contentType: file.type || 'image/jpeg' }); if (upErr) throw upErr; const { error: dbErr } = await supabase.from('baby_shower_photos').insert({ storage_path: path, uploaded_by: uploadedBy.trim() || null }); if (dbErr) throw dbErr }; queryClient.invalidateQueries({ queryKey: ['shower-photos'] }); setUploadedBy('') }
     catch (err) { console.error('Photo upload failed:', err); alert('Upload failed.') }
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' }
   }
+  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => uploadFiles(Array.from(e.target.files ?? []))
+  const handleDrop = (e: React.DragEvent) => { e.preventDefault(); setDragOver(false); uploadFiles(Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'))) }
   return (
-    <div style={{ backgroundColor: C.card, borderRadius: 12, border: `1px solid ${C.border}`, padding: 20, marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+    <div
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false) }}
+      onDrop={handleDrop}
+      style={{ backgroundColor: dragOver ? `${C.accent}08` : C.card, borderRadius: 12, border: dragOver ? `1px dashed ${C.accent}` : `1px solid ${C.border}`, padding: 20, marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.04)', transition: 'background-color 150ms ease, border-color 150ms ease' }}>
       <h2 style={{ fontFamily: "'Playfair Display', serif", fontWeight: 700, fontSize: 20, color: C.text, margin: '0 0 16px 0' }}>Share Your Photos 📸</h2>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
         <input type="text" value={uploadedBy} onChange={(e) => setUploadedBy(e.target.value)} placeholder="Your name (optional)" style={{ width: '100%', padding: '10px 12px', fontSize: 14, border: `1px solid ${C.border}`, borderRadius: 8, backgroundColor: C.inputBg, color: C.text, outline: 'none', boxSizing: 'border-box' }} />
-        <button onClick={() => fileRef.current?.click()} disabled={uploading} style={{ width: '100%', padding: '12px 16px', fontSize: 14, fontWeight: 600, color: C.accent, backgroundColor: `${C.accent}10`, border: `1px solid ${C.accent}30`, borderRadius: 10, cursor: 'pointer', opacity: uploading ? 0.5 : 1 }}>{uploading ? 'Uploading...' : '📷 Select Photos'}</button>
+        <button onClick={() => fileRef.current?.click()} disabled={uploading} style={{ width: '100%', padding: '12px 16px', fontSize: 14, fontWeight: 600, color: C.accent, backgroundColor: `${C.accent}10`, border: `1px solid ${C.accent}30`, borderRadius: 10, cursor: 'pointer', opacity: uploading ? 0.5 : 1 }}>{uploading ? 'Uploading...' : dragOver ? '📥 Drop photos to upload' : '📷 Select Photos'}</button>
+        <div style={{ fontSize: 12, color: C.muted, textAlign: 'center' }}>or drag & drop photos anywhere on this card</div>
         <input ref={fileRef} type="file" accept="image/*" multiple onChange={handleUpload} style={{ display: 'none' }} />
       </div>
       {photos.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>{photos.map((p) => <button key={p.id} onClick={() => setFullscreenUrl(getStorageUrl(p.storage_path))} style={{ aspectRatio: '1', borderRadius: 8, overflow: 'hidden', border: `1px solid ${C.border}`, padding: 0, cursor: 'pointer', background: 'none' }}><img src={getStorageUrl(p.storage_path)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" /></button>)}</div>}
