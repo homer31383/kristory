@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { format, parse, startOfToday, isBefore } from 'date-fns'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import JSZip from 'jszip'
+import QRCode from 'qrcode'
 import { supabase } from '../lib/supabase'
 import { resizeImage, getStorageUrl } from '../lib/helpers'
 import {
@@ -1217,6 +1218,39 @@ function GuestPhotosAdmin({ collapsed, onToggle }: { collapsed: Record<string, b
   )
 }
 
+// ==================== Photo Upload QR Code ====================
+function PhotoQrSection({ collapsed, onToggle }: { collapsed: Record<string, boolean>; onToggle: (k: string) => void }) {
+  // window.location.origin so the QR points at whichever domain the app is served from.
+  const photoUrl = `${window.location.origin}/shower#photos`
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  useEffect(() => {
+    // 600px PNG — comfortably above 300px for print.
+    QRCode.toDataURL(photoUrl, { width: 600, margin: 2, color: { dark: '#2C2522', light: '#FFFFFF' } })
+      .then(setQrDataUrl)
+      .catch((err: unknown) => console.error('QR generation failed:', err))
+  }, [photoUrl])
+  const isOpen = !collapsed['photoqr']
+  const download = () => {
+    if (!qrDataUrl) return
+    const a = document.createElement('a'); a.href = qrDataUrl; a.download = 'photo-upload-qr.png'; a.click()
+  }
+  return (
+    <div style={{ backgroundColor: C.card, borderRadius: 12, border: `1px solid ${C.border}`, padding: 16, marginBottom: 16 }}>
+      <SectionHeader title="Photo Upload QR Code" sectionKey="photoqr" collapsed={collapsed} onToggle={onToggle} />
+      {isOpen && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+          <p style={{ fontSize: 13, color: C.secondary, margin: 0, textAlign: 'center' }}>Guests scan this to jump straight to the photo upload section on the shower page.</p>
+          {qrDataUrl
+            ? <img src={qrDataUrl} alt="Photo upload QR code" style={{ width: 200, height: 200, borderRadius: 8, border: `1px solid ${C.border}`, backgroundColor: 'white' }} />
+            : <div style={{ width: 200, height: 200, borderRadius: 8, backgroundColor: C.bg, animation: 'pulse 1.5s infinite' }} />}
+          <div style={{ fontSize: 12, color: C.muted, wordBreak: 'break-all', textAlign: 'center' }}>{photoUrl}</div>
+          <button onClick={download} disabled={!qrDataUrl} style={{ padding: '10px 20px', fontSize: 13, fontWeight: 600, color: 'white', backgroundColor: C.accent, border: 'none', borderRadius: 10, cursor: 'pointer', opacity: qrDataUrl ? 1 : 0.5 }}>Download QR Code</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ==================== Add Guest Form ====================
 function AddGuestForm({ onClose }: { onClose: () => void }) {
   const createGuest = useCreateGuest()
@@ -1506,6 +1540,7 @@ function DashboardContent() {
         <PrepChecklist collapsed={collapsed} onToggle={toggle} />
         <MenuSection collapsed={collapsed} onToggle={toggle} />
         <GuestPhotosAdmin collapsed={collapsed} onToggle={toggle} />
+        <PhotoQrSection collapsed={collapsed} onToggle={toggle} />
 
         <UnmatchedRsvpsSection guests={guests} collapsed={collapsed} onToggle={toggle} />
 

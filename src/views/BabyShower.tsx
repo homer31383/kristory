@@ -117,6 +117,12 @@ function PhotoSection({ photos }: { photos: BabyShowerPhoto[] }) {
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
   })
   const [dragOver, setDragOver] = useState(false)
+  // Deep link from the printed QR code: /shower#photos scrolls here once the page renders.
+  useEffect(() => {
+    if (window.location.hash !== '#photos') return
+    const t = setTimeout(() => document.getElementById('photos')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300)
+    return () => clearTimeout(t)
+  }, [])
   const uploadFiles = async (files: File[]) => {
     if (files.length === 0 || uploading) return; setUploading(true)
     // Guest shower photos are intentionally uploaded at full original resolution — no resizeImage.
@@ -128,6 +134,7 @@ function PhotoSection({ photos }: { photos: BabyShowerPhoto[] }) {
   const handleDrop = (e: React.DragEvent) => { e.preventDefault(); setDragOver(false); uploadFiles(Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'))) }
   return (
     <div
+      id="photos"
       onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
       onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false) }}
       onDrop={handleDrop}
