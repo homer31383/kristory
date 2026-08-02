@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { format, parse, differenceInDays, differenceInWeeks } from 'date-fns'
 import { supabase } from '../lib/supabase'
@@ -107,7 +107,15 @@ function RsvpForm({ onSuccess }: { onSuccess: (status: string) => void }) {
 
 function PhotoSection({ photos }: { photos: BabyShowerPhoto[] }) {
   const queryClient = useQueryClient(); const fileRef = useRef<HTMLInputElement>(null)
-  const [uploading, setUploading] = useState(false); const [uploadedBy, setUploadedBy] = useState(''); const [fullscreenUrl, setFullscreenUrl] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false); const [uploadedBy, setUploadedBy] = useState('')
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null)
+  const touchStartX = useRef<number | null>(null)
+  const stepViewer = (delta: number) => setViewerIndex(i => i === null ? i : (i + delta + photos.length) % photos.length)
+  useEffect(() => {
+    if (viewerIndex === null) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'ArrowLeft') stepViewer(-1); else if (e.key === 'ArrowRight') stepViewer(1); else if (e.key === 'Escape') setViewerIndex(null) }
+    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
+  })
   const [dragOver, setDragOver] = useState(false)
   const uploadFiles = async (files: File[]) => {
     if (files.length === 0 || uploading) return; setUploading(true)
@@ -131,8 +139,22 @@ function PhotoSection({ photos }: { photos: BabyShowerPhoto[] }) {
         <div style={{ fontSize: 12, color: C.muted, textAlign: 'center' }}>or drag & drop photos anywhere on this card</div>
         <input ref={fileRef} type="file" accept="image/*" multiple onChange={handleUpload} style={{ display: 'none' }} />
       </div>
-      {photos.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>{photos.map((p) => <button key={p.id} onClick={() => setFullscreenUrl(getStorageUrl(p.storage_path))} style={{ aspectRatio: '1', borderRadius: 8, overflow: 'hidden', border: `1px solid ${C.border}`, padding: 0, cursor: 'pointer', background: 'none' }}><img src={getStorageUrl(p.storage_path)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" /></button>)}</div>}
-      {fullscreenUrl && <div onClick={() => setFullscreenUrl(null)} style={{ position: 'fixed', inset: 0, zIndex: 9999, backgroundColor: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><img src={fullscreenUrl} alt="" style={{ maxWidth: '95vw', maxHeight: '95vh', objectFit: 'contain', borderRadius: 8 }} /><button style={{ position: 'absolute', top: 16, right: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button></div>}
+      {photos.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>{photos.map((p, i) => <button key={p.id} onClick={() => setViewerIndex(i)} style={{ aspectRatio: '1', borderRadius: 8, overflow: 'hidden', border: `1px solid ${C.border}`, padding: 0, cursor: 'pointer', background: 'none' }}><img src={getStorageUrl(p.storage_path)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" /></button>)}</div>}
+      {viewerIndex !== null && photos[viewerIndex] && (
+        <div
+          onClick={() => setViewerIndex(null)}
+          onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX }}
+          onTouchEnd={(e) => { const sx = touchStartX.current; touchStartX.current = null; if (sx === null) return; const dx = e.changedTouches[0].clientX - sx; if (Math.abs(dx) > 50) stepViewer(dx < 0 ? 1 : -1) }}
+          style={{ position: 'fixed', inset: 0, zIndex: 9999, backgroundColor: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <img src={getStorageUrl(photos[viewerIndex].storage_path)} alt="" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '92vw', maxHeight: '86vh', objectFit: 'contain', borderRadius: 8, cursor: 'default' }} />
+          {photos.length > 1 && <>
+            <button onClick={(e) => { e.stopPropagation(); stepViewer(-1) }} aria-label="Previous photo" style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', fontSize: 26, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>‹</button>
+            <button onClick={(e) => { e.stopPropagation(); stepViewer(1) }} aria-label="Next photo" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', fontSize: 26, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>›</button>
+            <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', color: 'white', fontSize: 13, fontWeight: 500, backgroundColor: 'rgba(0,0,0,0.5)', padding: '6px 14px', borderRadius: 16 }}>{viewerIndex + 1} of {photos.length}</div>
+          </>}
+          <button onClick={() => setViewerIndex(null)} aria-label="Close" style={{ position: 'absolute', top: 16, right: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+        </div>
+      )}
     </div>
   )
 }
