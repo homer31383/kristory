@@ -2,9 +2,9 @@ import { useState, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { format, parse, differenceInDays, differenceInWeeks } from 'date-fns'
 import { supabase } from '../lib/supabase'
-import { resizeImage, getStorageUrl } from '../lib/helpers'
-import { useShowerEvent, usePublicShowerGuests, useRsvpGuest, useShowerPhotos } from '../hooks/useBabyShower'
-import type { BabyProfile, BabyShowerEvent, BabyShowerGuest, BabyShowerPhoto } from '../types'
+import { getStorageUrl } from '../lib/helpers'
+import { useShowerEvent, useRsvpGuest, useShowerPhotos } from '../hooks/useBabyShower'
+import type { BabyProfile, BabyShowerEvent, BabyShowerPhoto } from '../types'
 
 const C = {
   bg: '#EDE6DE', card: '#F7F3EF', border: '#DDD5CB', text: '#2C2522',
@@ -38,9 +38,23 @@ function EventCountdown({ eventDate }: { eventDate: string }) {
 
 function downloadICS(event: BabyShowerEvent) {
   const d = event.event_date || ''; const dateStr = d.replace(/-/g, '')
-  const dtStart = `${dateStr}T140000`; const dtEnd = `${dateStr}T160000`
+  // Anchor the times to Eastern Time. The VTIMEZONE block carries the EST/EDT
+  // DST rules so clients render 11:30 AM–2:00 PM correctly regardless of the
+  // viewer's own timezone.
+  const dtStart = `${dateStr}T113000`; const dtEnd = `${dateStr}T140000`
+  const dtStamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
   const location = [event.location_name, event.location_address].filter(Boolean).join(', ')
-  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Kristory//BabyShower//EN', 'BEGIN:VEVENT', `DTSTART:${dtStart}`, `DTEND:${dtEnd}`, 'SUMMARY:Baby Shower', location ? `LOCATION:${location}` : '', event.description ? `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}` : '', 'END:VEVENT', 'END:VCALENDAR'].filter(Boolean).join('\r\n')
+  const ics = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Kristory//BabyShower//EN', 'CALSCALE:GREGORIAN',
+    'BEGIN:VTIMEZONE', 'TZID:America/New_York',
+    'BEGIN:DAYLIGHT', 'TZOFFSETFROM:-0500', 'TZOFFSETTO:-0400', 'TZNAME:EDT', 'DTSTART:19700308T020000', 'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU', 'END:DAYLIGHT',
+    'BEGIN:STANDARD', 'TZOFFSETFROM:-0400', 'TZOFFSETTO:-0500', 'TZNAME:EST', 'DTSTART:19701101T020000', 'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU', 'END:STANDARD',
+    'END:VTIMEZONE',
+    'BEGIN:VEVENT', `UID:baby-shower-${dateStr}@the-kristory.vercel.app`, `DTSTAMP:${dtStamp}`,
+    `DTSTART;TZID=America/New_York:${dtStart}`, `DTEND;TZID=America/New_York:${dtEnd}`,
+    'SUMMARY:Leahy-Bernier Baby Shower', location ? `LOCATION:${location}` : '', event.description ? `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}` : '',
+    'END:VEVENT', 'END:VCALENDAR',
+  ].filter(Boolean).join('\r\n')
   const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' }); const url = URL.createObjectURL(blob)
   const a = document.createElement('a'); a.href = url; a.download = 'baby-shower.ics'; a.click(); URL.revokeObjectURL(url)
 }
@@ -91,31 +105,13 @@ function RsvpForm({ onSuccess }: { onSuccess: (status: string) => void }) {
   )
 }
 
-function PublicGuestList({ guests }: { guests: Pick<BabyShowerGuest, 'name' | 'rsvp_status' | 'plus_one' | 'plus_one_name'>[] }) {
-  const coming = guests.filter(g => g.rsvp_status === 'yes'); const maybe = guests.filter(g => g.rsvp_status === 'maybe'); const pending = guests.filter(g => g.rsvp_status === 'pending')
-  const comingCount = coming.reduce((n, g) => n + 1 + (g.plus_one ? 1 : 0), 0)
-  const Group = ({ label, color, items }: { label: string; color: string; items: typeof coming }) => {
-    const bgMap: Record<string, string> = { [C.green]: '#E8F5E9', [C.yellow]: '#FFF8E1', [C.muted]: '#F5F5F5' }; const fgMap: Record<string, string> = { [C.green]: '#2E7D32', [C.yellow]: '#F57F17', [C.muted]: C.muted }
-    return (<div style={{ marginBottom: 16 }}><div style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color, marginBottom: 8 }}>{label}</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{items.map((g, i) => <span key={i} style={{ display: 'inline-block', padding: '6px 12px', fontSize: 13, borderRadius: 20, backgroundColor: bgMap[color] || '#F5F5F5', color: fgMap[color] || C.muted, fontWeight: 500 }}>{g.name}{g.plus_one && g.plus_one_name ? ` + ${g.plus_one_name}` : g.plus_one ? ' +1' : ''}</span>)}</div></div>)
-  }
-  return (
-    <div>
-      <h2 style={{ fontFamily: "'Playfair Display', serif", fontWeight: 700, fontSize: 20, color: C.text, margin: '0 0 8px 0' }}>Guest List</h2>
-      <p style={{ fontSize: 13, color: C.secondary, margin: '0 0 16px 0' }}>{comingCount} coming{maybe.length > 0 ? `, ${maybe.length} maybe` : ''}{pending.length > 0 ? `, ${pending.length} pending` : ''}</p>
-      {coming.length > 0 && <Group label="Coming 🎉" color={C.green} items={coming} />}
-      {maybe.length > 0 && <Group label="Maybe 🤔" color={C.yellow} items={maybe} />}
-      {pending.length > 0 && <Group label="Pending" color={C.muted} items={pending} />}
-      {coming.length === 0 && maybe.length === 0 && pending.length === 0 && <div style={{ textAlign: 'center', padding: '32px 0' }}><div style={{ fontSize: 40, marginBottom: 8 }}>🎈</div><p style={{ color: C.secondary, fontSize: 14 }}>Be the first to RSVP!</p></div>}
-    </div>
-  )
-}
-
 function PhotoSection({ photos }: { photos: BabyShowerPhoto[] }) {
   const queryClient = useQueryClient(); const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false); const [uploadedBy, setUploadedBy] = useState(''); const [fullscreenUrl, setFullscreenUrl] = useState<string | null>(null)
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files; if (!files || files.length === 0) return; setUploading(true)
-    try { for (const file of Array.from(files)) { const resized = await resizeImage(file); const path = `shower-photos/${crypto.randomUUID()}.jpg`; const { error: upErr } = await supabase.storage.from('kristory-photos').upload(path, resized, { contentType: 'image/jpeg' }); if (upErr) throw upErr; const { error: dbErr } = await supabase.from('baby_shower_photos').insert({ storage_path: path, uploaded_by: uploadedBy.trim() || null }); if (dbErr) throw dbErr }; queryClient.invalidateQueries({ queryKey: ['shower-photos'] }); setUploadedBy('') }
+    // Guest shower photos are intentionally uploaded at full original resolution — no resizeImage.
+    try { for (const file of Array.from(files)) { const ext = /\.([a-zA-Z0-9]+)$/.exec(file.name)?.[1]?.toLowerCase() || 'jpg'; const path = `shower-photos/${crypto.randomUUID()}.${ext}`; const { error: upErr } = await supabase.storage.from('kristory-photos').upload(path, file, { contentType: file.type || 'image/jpeg' }); if (upErr) throw upErr; const { error: dbErr } = await supabase.from('baby_shower_photos').insert({ storage_path: path, uploaded_by: uploadedBy.trim() || null }); if (dbErr) throw dbErr }; queryClient.invalidateQueries({ queryKey: ['shower-photos'] }); setUploadedBy('') }
     catch (err) { console.error('Photo upload failed:', err); alert('Upload failed.') }
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' }
   }
@@ -135,7 +131,6 @@ function PhotoSection({ photos }: { photos: BabyShowerPhoto[] }) {
 
 function ShowerContent({ profile }: { profile: BabyProfile }) {
   const { data: event, isLoading: eventLoading } = useShowerEvent()
-  const { data: guests = [], isLoading: guestsLoading } = usePublicShowerGuests(true)
   const { data: photos = [] } = useShowerPhotos()
   const [rsvpDone, setRsvpDone] = useState<string | null>(null)
   const babyName = profile.name && profile.name !== 'Baby' ? profile.name : null
@@ -316,10 +311,6 @@ function ShowerContent({ profile }: { profile: BabyProfile }) {
               <button onClick={() => setRsvpDone(null)} style={{ padding: '10px 20px', fontSize: 13, fontWeight: 500, color: C.accent, backgroundColor: 'transparent', border: `1px solid ${C.accent}`, borderRadius: 10, cursor: 'pointer' }}>Update my RSVP</button>
             </div>
           ) : <RsvpForm onSuccess={(s) => setRsvpDone(s)} />}
-        </div>
-
-        <div style={{ backgroundColor: C.card, borderRadius: 12, border: `1px solid ${C.border}`, padding: 20, marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-          {guestsLoading ? <div style={{ textAlign: 'center', padding: 24 }}><p style={{ color: C.secondary, fontSize: 14 }}>Loading...</p></div> : <PublicGuestList guests={guests} />}
         </div>
 
         <PhotoSection photos={photos} />

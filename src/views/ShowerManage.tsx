@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { format, parse, startOfToday, isBefore } from 'date-fns'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import JSZip from 'jszip'
 import { supabase } from '../lib/supabase'
 import { resizeImage, getStorageUrl } from '../lib/helpers'
 import {
@@ -11,7 +12,7 @@ import {
   useShowerHelpers, useCreateShowerHelper, useUpdateShowerHelper, useDeleteShowerHelper,
   useShowerMenu, useCreateMenuItem, useUpdateMenuItem, useDeleteMenuItem, useSwapMenuOrder, useImportMenuCsv, useDeleteMenuItems, useShowerGuestCount, useSetShowerGuestCount,
 } from '../hooks/useBabyShower'
-import type { BabyProfile, BabyShowerEvent, BabyShowerGuest, GuestAddress, BabyShowerScheduleItem, BabyShowerHelper, BabyShowerMenuItem } from '../types'
+import type { BabyProfile, BabyShowerEvent, BabyShowerGuest, GuestAddress, BabyShowerScheduleItem, BabyShowerHelper, BabyShowerMenuItem, BabyShowerPhoto } from '../types'
 
 const C = {
   bg: '#EDE6DE', card: '#F7F3EF', border: '#DDD5CB', text: '#2C2522',
@@ -1139,19 +1140,77 @@ function PrepChecklist({ collapsed, onToggle }: { collapsed: Record<string, bool
 function GuestPhotosAdmin({ collapsed, onToggle }: { collapsed: Record<string, boolean>; onToggle: (k: string) => void }) {
   const { data: photos = [], isLoading } = useShowerPhotos(); const deletePhoto = useDeleteShowerPhoto()
   const [fullscreenUrl, setFullscreenUrl] = useState<string | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [menuFor, setMenuFor] = useState<string | null>(null)
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null)
+  const cancelRef = useRef(false)
   if (isLoading || photos.length === 0) return null
   const isOpen = !collapsed['photos']
+  const allSelected = selected.size === photos.length
+
+  const toggleSelect = (id: string) => setSelected(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })
+
+  const downloadZip = async (targets: BabyShowerPhoto[]) => {
+    if (targets.length === 0 || progress) return
+    cancelRef.current = false
+    try {
+      const zip = new JSZip()
+      for (let i = 0; i < targets.length; i++) {
+        if (cancelRef.current) return
+        setProgress({ current: i + 1, total: targets.length })
+        const p = targets[i]
+        const { data, error } = await supabase.storage.from('kristory-photos').download(p.storage_path)
+        if (error || !data) throw error ?? new Error(`Download failed: ${p.storage_path}`)
+        const base = p.storage_path.split('/').pop() || `${p.id}.jpg`
+        const who = p.uploaded_by ? `${p.uploaded_by.replace(/[^a-zA-Z0-9 _-]/g, '').trim()}-` : ''
+        zip.file(`${String(i + 1).padStart(2, '0')}-${who}${base}`, data)
+      }
+      if (cancelRef.current) return
+      const blob = await zip.generateAsync({ type: 'blob' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href = url; a.download = 'shower-photos.zip'; a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) { console.error('Photo ZIP download failed:', err); alert('Download failed.') }
+    finally { setProgress(null) }
+  }
+
+  const handleDelete = (p: BabyShowerPhoto) => {
+    setMenuFor(null)
+    if (!confirm('Delete this photo?')) return
+    deletePhoto.mutate({ id: p.id, storage_path: p.storage_path })
+    setSelected(prev => { const next = new Set(prev); next.delete(p.id); return next })
+  }
+
+  const toolbarBtn: React.CSSProperties = { padding: '6px 12px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1px solid ${C.border}`, backgroundColor: C.inputBg, color: C.text, cursor: 'pointer' }
   return (
     <div style={{ backgroundColor: C.card, borderRadius: 12, border: `1px solid ${C.border}`, padding: 16, marginBottom: 16 }}>
       <SectionHeader title={`Guest Photos (${photos.length})`} sectionKey="photos" collapsed={collapsed} onToggle={onToggle} />
       {isOpen && <>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+          <button onClick={() => setSelected(allSelected ? new Set() : new Set(photos.map(p => p.id)))} style={toolbarBtn}>{allSelected ? 'Deselect All' : 'Select All'}</button>
+          <button onClick={() => downloadZip(photos.filter(p => selected.has(p.id)))} disabled={selected.size === 0 || !!progress} style={{ ...toolbarBtn, color: 'white', backgroundColor: C.accent, border: 'none', opacity: selected.size === 0 || progress ? 0.5 : 1 }}>Download Selected ({selected.size})</button>
+          <button onClick={() => { setSelected(new Set(photos.map(p => p.id))); downloadZip(photos) }} disabled={!!progress} style={{ ...toolbarBtn, color: 'white', backgroundColor: C.accent, border: 'none', opacity: progress ? 0.5 : 1 }}>Download All</button>
+        </div>
+        {progress && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', marginBottom: 10, borderRadius: 8, backgroundColor: `${C.accent}10`, border: `1px solid ${C.accent}30` }}>
+            <span style={{ fontSize: 13, color: C.text }}>Downloading photo {progress.current} of {progress.total}...</span>
+            <button onClick={() => { cancelRef.current = true }} style={{ padding: '4px 10px', fontSize: 12, fontWeight: 600, color: C.error, backgroundColor: 'transparent', border: `1px solid ${C.error}`, borderRadius: 6, cursor: 'pointer', marginLeft: 'auto' }}>Cancel</button>
+          </div>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>{photos.map(p => (
           <div key={p.id} style={{ position: 'relative' }}>
-            <button onClick={() => setFullscreenUrl(getStorageUrl(p.storage_path))} style={{ aspectRatio: '1', width: '100%', borderRadius: 8, overflow: 'hidden', border: `1px solid ${C.border}`, padding: 0, cursor: 'pointer', background: 'none' }}><img src={getStorageUrl(p.storage_path)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" /></button>
-            <button onClick={() => { if (confirm('Delete this photo?')) deletePhoto.mutate({ id: p.id, storage_path: p.storage_path }) }} style={{ position: 'absolute', top: 2, right: 2, width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.6)', border: 'none', color: 'white', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+            <button onClick={() => setFullscreenUrl(getStorageUrl(p.storage_path))} style={{ aspectRatio: '1', width: '100%', borderRadius: 8, overflow: 'hidden', border: selected.has(p.id) ? `2px solid ${C.accent}` : `1px solid ${C.border}`, padding: 0, cursor: 'pointer', background: 'none' }}><img src={getStorageUrl(p.storage_path)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" /></button>
+            <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)} style={{ position: 'absolute', top: 4, left: 4, width: 18, height: 18, accentColor: C.accent, cursor: 'pointer' }} />
+            <button onClick={() => setMenuFor(menuFor === p.id ? null : p.id)} style={{ position: 'absolute', top: 2, right: 2, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(0,0,0,0.6)', border: 'none', color: 'white', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>⋯</button>
+            {menuFor === p.id && (
+              <div style={{ position: 'absolute', top: 26, right: 2, zIndex: 20, backgroundColor: C.card, border: `1px solid ${C.border}`, borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.15)', overflow: 'hidden' }}>
+                <button onClick={() => handleDelete(p)} style={{ display: 'block', width: '100%', padding: '8px 14px', fontSize: 13, fontWeight: 500, color: C.error, backgroundColor: 'transparent', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', textAlign: 'left' }}>🗑 Delete photo</button>
+              </div>
+            )}
             {p.uploaded_by && <div style={{ fontSize: 10, color: C.muted, textAlign: 'center', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.uploaded_by}</div>}
           </div>
         ))}</div>
+        {menuFor && <div onClick={() => setMenuFor(null)} style={{ position: 'fixed', inset: 0, zIndex: 10 }} />}
         {fullscreenUrl && <div onClick={() => setFullscreenUrl(null)} style={{ position: 'fixed', inset: 0, zIndex: 9999, backgroundColor: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><img src={fullscreenUrl} alt="" style={{ maxWidth: '95vw', maxHeight: '95vh', objectFit: 'contain', borderRadius: 8 }} /><button style={{ position: 'absolute', top: 16, right: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button></div>}
       </>}
     </div>
