@@ -70,6 +70,58 @@ export function useCreateEntry() {
   })
 }
 
+export function useEntryExists(date: string) {
+  return useQuery({
+    queryKey: ['entry-exists', date],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('journal_entries')
+        .select('id')
+        .eq('entry_date', date)
+        .maybeSingle()
+      if (error) throw error
+      return !!data
+    },
+    enabled: !!date,
+  })
+}
+
+export function useUpdateEntryDate() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ entryId, newDate }: { entryId: string; newDate: string; oldDate: string }) => {
+      const { data, error } = await supabase
+        .from('journal_entries')
+        .update({ entry_date: newDate })
+        .eq('id', entryId)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // Family feed chronology follows the entry's date, so shared posts move too.
+      await supabase
+        .from('family_posts')
+        .update({ published_at: `${newDate}T12:00:00Z` })
+        .eq('entry_id', entryId)
+
+      return data as JournalEntry
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['entry', variables.oldDate] })
+      queryClient.invalidateQueries({ queryKey: ['entry', variables.newDate] })
+      queryClient.invalidateQueries({ queryKey: ['entry-exists'] })
+      queryClient.invalidateQueries({ queryKey: ['entries'] })
+      queryClient.invalidateQueries({ queryKey: ['on-this-day'] })
+      queryClient.invalidateQueries({ queryKey: ['trips'] })
+      queryClient.invalidateQueries({ queryKey: ['suggested-trips'] })
+      queryClient.invalidateQueries({ queryKey: ['family-posts'] })
+      queryClient.invalidateQueries({ queryKey: ['family-post'] })
+    },
+  })
+}
+
 export function useUpsertSection() {
   const queryClient = useQueryClient()
 

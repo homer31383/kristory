@@ -38,14 +38,12 @@ export default function RichTextEditor({ content, onChange, placeholder = 'Write
     },
   })
 
-  // Sync external content changes (only if content truly differs)
-  const isFirstRender = useRef(true)
+  // Sync external content changes (initial load, switching to another entry).
+  // Never while the editor is focused — resetting the document mid-typing
+  // throws the cursor to the end of the text.
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false
-      return
-    }
-    if (editor && content !== editor.getHTML()) {
+    if (!editor || editor.isFocused) return
+    if (content !== editor.getHTML()) {
       editor.commands.setContent(content, false)
     }
   }, [content, editor])

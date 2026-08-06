@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useEntry, useCreateEntry, useUpsertSection, useUploadPhoto, useDeletePhoto, useAddTaggedItem, useDeleteTaggedItem } from '../hooks/useEntries'
+import { useEntry, useCreateEntry, useUpsertSection, useUploadPhoto, useDeletePhoto, useAddTaggedItem, useDeleteTaggedItem, useUpdateEntryDate, useEntryExists } from '../hooks/useEntries'
 import { useTrips, useAddEntryToTrip, useRemoveEntryFromTrip } from '../hooks/useTrips'
 import { useBabyMilestones, useCreateBabyMilestone, useDeleteBabyMilestone, PREGNANCY_MILESTONES, FIRST_YEAR_MILESTONES } from '../hooks/useBaby'
 import { useFamilyPostForEntry, useCreateFamilyPost, useUpdateFamilyPost, useDeleteFamilyPost } from '../hooks/useFamilyFeed'
@@ -57,6 +57,11 @@ export default function EntryDetail() {
   const [lightboxPhoto, setLightboxPhoto] = useState<string | null>(null)
   const [editingPhotos, setEditingPhotos] = useState(false)
   const [showDatePicker, setShowDatePicker] = useState(false)
+  const [showMoveSheet, setShowMoveSheet] = useState(false)
+  const [moveTarget, setMoveTarget] = useState('')
+  const [moveError, setMoveError] = useState<string | null>(null)
+  const updateEntryDate = useUpdateEntryDate()
+  const { data: moveTargetTaken = false } = useEntryExists(moveTarget && moveTarget !== date ? moveTarget : '')
   const [showTripSheet, setShowTripSheet] = useState(false)
   const [showMilestoneSheet, setShowMilestoneSheet] = useState(false)
   const [customMilestoneTitle, setCustomMilestoneTitle] = useState('')
@@ -70,21 +75,38 @@ export default function EntryDetail() {
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const entryIdRef = useRef<string | null>(null)
+  const loadedEntryIdRef = useRef<string | null>(null)
   const pastingRef = useRef(false)
 
   const today = getTodayString()
 
-  // Get or create entry
+  // The same component instance serves every /journal/:date — reset editor
+  // state whenever the date param changes. Clearing the pending save timer
+  // matters: a stale timer firing after navigation would ensureEntry() on the
+  // NEW date and write the old day's content into it.
   useEffect(() => {
-    if (entry) {
-      entryIdRef.current = entry.id
-      const mySection = entry.sections?.find((s: EntrySection) => s.user_id === user?.id)
-      if (mySection?.content) {
-        setLocalContent(mySection.content)
-      }
-    } else {
+    loadedEntryIdRef.current = null
+    entryIdRef.current = null
+    setLocalContent('')
+    setIsEditing(false)
+    setSaveStatus('idle')
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+  }, [date])
+
+  // Load the entry's section content into the editor ONLY when a different
+  // entry arrives. Every autosave invalidates ['entry', date] and refetches;
+  // resetting the editor content from that refetch (whose HTML is sanitized
+  // and may lag the user's typing) is what threw the cursor to the end.
+  useEffect(() => {
+    if (!entry) {
       entryIdRef.current = null
+      return
     }
+    entryIdRef.current = entry.id
+    if (!user || loadedEntryIdRef.current === entry.id) return
+    loadedEntryIdRef.current = entry.id
+    const mySection = entry.sections?.find((s: EntrySection) => s.user_id === user.id)
+    setLocalContent(mySection?.content ?? '')
   }, [entry, user?.id])
 
   // Sync family post state when data loads
@@ -280,6 +302,22 @@ export default function EntryDetail() {
     }
   }
 
+  const handleMoveEntry = async () => {
+    if (!entry || !date || !moveTarget || moveTarget === date || moveTargetTaken) return
+    setMoveError(null)
+    try {
+      await updateEntryDate.mutateAsync({ entryId: entry.id, newDate: moveTarget, oldDate: date })
+      const target = moveTarget
+      setShowMoveSheet(false)
+      setMoveTarget('')
+      navigate(`/journal/${target}`, { replace: true })
+    } catch (err) {
+      // Unique constraint race: an entry appeared on the target date after our check.
+      console.error('Failed to change entry date:', err)
+      setMoveError('Could not change the date — an entry may already exist on that date.')
+    }
+  }
+
   const handleFamilyToggle = async () => {
     if (familyShareOpen && familyPost) {
       // Turning off — show confirmation
@@ -376,10 +414,17 @@ export default function EntryDetail() {
           </svg>
         </button>
         <h1
-          className="text-xl flex-1"
+          className={entry ? 'text-xl flex-1 cursor-pointer' : 'text-xl flex-1'}
           style={{ fontFamily: "'Playfair Display', serif", fontWeight: 700, color: 'var(--text-primary)' }}
+          onClick={() => { if (entry) { setMoveTarget(date); setMoveError(null); setShowMoveSheet(true) } }}
+          title={entry ? 'Change entry date' : undefined}
         >
           {formatDateHeading(date)}
+          {entry && (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline-block ml-2" style={{ opacity: 0.35, verticalAlign: 'baseline' }}>
+              <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+            </svg>
+          )}
         </h1>
         {!isEditing && (
           <button
@@ -903,6 +948,54 @@ export default function EntryDetail() {
       )}
 
       {/* Milestone picker sheet */}
+      {/* Change entry date */}
+      <BottomSheet
+        isOpen={showMoveSheet}
+        onClose={() => { setShowMoveSheet(false); setMoveTarget(''); setMoveError(null) }}
+        title="Change Entry Date"
+      >
+        <div className="space-y-3">
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+            Move this entry — with both sections, photos, and tagged items — to a different date.
+          </p>
+          <input
+            type="date"
+            value={moveTarget}
+            max={today}
+            onChange={(e) => { setMoveTarget(e.target.value); setMoveError(null) }}
+            className="w-full rounded-lg border p-2.5 text-sm"
+            style={{ backgroundColor: 'var(--input-bg)', borderColor: 'var(--border-card)', color: 'var(--text-primary)' }}
+          />
+          {moveTargetTaken && (
+            <div className="px-3 py-2 rounded-lg text-xs font-medium" style={{ backgroundColor: '#FEE2E2', color: '#991B1B' }}>
+              An entry already exists on {formatDateHeading(moveTarget)}. Changing the date will not merge them — choose a different date or edit the other entry instead.
+            </div>
+          )}
+          {(entry?.trip_entries?.length ?? 0) > 0 && (
+            <div className="px-3 py-2 rounded-lg text-xs font-medium" style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
+              This entry is part of a trip. Changing the date may remove it from the trip's date range.
+            </div>
+          )}
+          {moveError && (
+            <div className="px-3 py-2 rounded-lg text-xs font-medium" style={{ backgroundColor: '#FEE2E2', color: '#991B1B' }}>
+              {moveError}
+            </div>
+          )}
+          <button
+            onClick={handleMoveEntry}
+            disabled={!moveTarget || moveTarget === date || moveTargetTaken || updateEntryDate.isPending}
+            className="w-full py-3 rounded-xl text-sm font-semibold cursor-pointer"
+            style={{
+              backgroundColor: 'var(--accent)',
+              color: 'white',
+              opacity: !moveTarget || moveTarget === date || moveTargetTaken || updateEntryDate.isPending ? 0.5 : 1,
+            }}
+          >
+            {updateEntryDate.isPending ? 'Moving...' : 'Change Date'}
+          </button>
+        </div>
+      </BottomSheet>
+
       <BottomSheet
         isOpen={showMilestoneSheet}
         onClose={() => { setShowMilestoneSheet(false); setCustomMilestoneTitle('') }}
