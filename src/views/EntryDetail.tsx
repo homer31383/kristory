@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useEntry, useCreateEntry, useUpsertSection, useUploadPhoto, useDeletePhoto, useAddTaggedItem, useDeleteTaggedItem, useUpdateEntryDate, useEntryExists } from '../hooks/useEntries'
+import { useEntry, useCreateEntry, useUpsertSection, useUploadPhoto, useDeletePhoto, useAddTaggedItem, useDeleteTaggedItem, useUpdateEntryDate, useEntryExists, useAdjacentEntries } from '../hooks/useEntries'
 import { useTrips, useAddEntryToTrip, useRemoveEntryFromTrip } from '../hooks/useTrips'
 import { useBabyMilestones, useCreateBabyMilestone, useDeleteBabyMilestone, PREGNANCY_MILESTONES, FIRST_YEAR_MILESTONES } from '../hooks/useBaby'
 import { useFamilyPostForEntry, useCreateFamilyPost, useUpdateFamilyPost, useDeleteFamilyPost } from '../hooks/useFamilyFeed'
@@ -30,6 +30,9 @@ export default function EntryDetail() {
   const navigate = useNavigate()
   const { user } = useUser()
   const { data: entry, isLoading } = useEntry(date ?? '')
+  const { data: adjacent, isLoading: adjacentLoading } = useAdjacentEntries(date ?? '')
+  const prevDate = adjacent?.prev ?? null
+  const nextDate = adjacent?.next ?? null
   const createEntry = useCreateEntry()
   const upsertSection = useUpsertSection()
   const uploadPhoto = useUploadPhoto()
@@ -291,6 +294,40 @@ export default function EntryDetail() {
     }
   }
 
+  const goToEntry = useCallback(
+    (target: string | null) => {
+      if (!target) return
+      navigate(`/journal/${target}`)
+    },
+    [navigate]
+  )
+
+  // ─── Swipe navigation (mobile) ───
+  // Track the touch start point and decide on touchend whether it was a
+  // deliberate horizontal swipe. Swipes are ignored while editing (text
+  // selection / caret drags) and while any overlay is open.
+  const touchStartRef = useRef<{ x: number; y: number; t: number } | null>(null)
+  const swipeBlocked =
+    isEditing || !!lightboxPhoto || showAddItem || showMoveSheet || showTripSheet || showMilestoneSheet
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) { touchStartRef.current = null; return }
+    const t = e.touches[0]
+    touchStartRef.current = { x: t.clientX, y: t.clientY, t: Date.now() }
+  }
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const start = touchStartRef.current
+    touchStartRef.current = null
+    if (!start || swipeBlocked) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - start.x
+    const dy = t.clientY - start.y
+    const elapsed = Date.now() - start.t
+    // Must be mostly horizontal, far enough, and quick enough to be a swipe.
+    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2 || elapsed > 800) return
+    if (dx < 0) goToEntry(nextDate)   // swipe left -> newer entry
+    else goToEntry(prevDate)          // swipe right -> older entry
+  }
+
   const handleDateChange = (newDate: string) => {
     setShowDatePicker(false)
     if (newDate && newDate !== date) {
@@ -400,8 +437,14 @@ export default function EntryDetail() {
   const mySection = sections.find((s) => s.user_id === user?.id)
   const otherSections = sections.filter((s) => s.user_id !== user?.id)
 
+  const navBtnStyle = (enabled: boolean): React.CSSProperties => ({
+    color: enabled ? 'var(--text-secondary)' : 'var(--text-muted)',
+    opacity: adjacentLoading ? 0.5 : enabled ? 1 : 0.3,
+    cursor: enabled ? 'pointer' : 'default',
+  })
+
   return (
-    <div className="pb-24">
+    <div className="pb-24" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       {/* Header */}
       <div className="flex items-center gap-3 mb-2">
         <button
@@ -426,6 +469,37 @@ export default function EntryDetail() {
             </svg>
           )}
         </h1>
+        {/* Previous / next entry navigation. Always rendered so the buttons
+            keep a fixed position; disabled when no adjacent entry exists. */}
+        <div
+          className={`flex items-center flex-shrink-0 ${adjacentLoading ? 'animate-pulse' : ''}`}
+          aria-busy={adjacentLoading}
+        >
+          <button
+            onClick={() => goToEntry(prevDate)}
+            disabled={!prevDate || adjacentLoading}
+            aria-label={prevDate ? `Previous entry, ${formatDateHeading(prevDate)}` : 'No earlier entry'}
+            title={prevDate ? formatDateHeading(prevDate) : 'No earlier entry'}
+            className="w-9 h-9 flex items-center justify-center rounded-lg transition-opacity"
+            style={navBtnStyle(!!prevDate && !adjacentLoading)}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
+          <button
+            onClick={() => goToEntry(nextDate)}
+            disabled={!nextDate || adjacentLoading}
+            aria-label={nextDate ? `Next entry, ${formatDateHeading(nextDate)}` : 'No later entry'}
+            title={nextDate ? formatDateHeading(nextDate) : 'No later entry'}
+            className="w-9 h-9 flex items-center justify-center rounded-lg transition-opacity"
+            style={navBtnStyle(!!nextDate && !adjacentLoading)}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+          </button>
+        </div>
         {!isEditing && (
           <button
             onClick={() => setIsEditing(true)}

@@ -66,6 +66,7 @@ export function useCreateEntry() {
     onSuccess: (data) => {
       queryClient.setQueryData(['entry', data.entry_date], { ...data, sections: [], photos: [], tagged_items: [], trip_entries: [] })
       queryClient.invalidateQueries({ queryKey: ['entries'] })
+      queryClient.invalidateQueries({ queryKey: ['adjacent-entries'] })
     },
   })
 }
@@ -112,6 +113,7 @@ export function useUpdateEntryDate() {
       queryClient.invalidateQueries({ queryKey: ['entry', variables.oldDate] })
       queryClient.invalidateQueries({ queryKey: ['entry', variables.newDate] })
       queryClient.invalidateQueries({ queryKey: ['entry-exists'] })
+      queryClient.invalidateQueries({ queryKey: ['adjacent-entries'] })
       queryClient.invalidateQueries({ queryKey: ['entries'] })
       queryClient.invalidateQueries({ queryKey: ['on-this-day'] })
       queryClient.invalidateQueries({ queryKey: ['trips'] })
@@ -303,6 +305,41 @@ export function useDeleteTaggedItem() {
       queryClient.invalidateQueries({ queryKey: ['entry', variables.entryDate] })
       queryClient.invalidateQueries({ queryKey: ['tagged-items'] })
     },
+  })
+}
+
+/**
+ * Dates of the nearest journal entries before and after `date`, skipping any
+ * gaps in the calendar. Either side is null when no such entry exists.
+ */
+export function useAdjacentEntries(date: string) {
+  return useQuery({
+    queryKey: ['adjacent-entries', date],
+    queryFn: async () => {
+      const [prevRes, nextRes] = await Promise.all([
+        supabase
+          .from('journal_entries')
+          .select('entry_date')
+          .lt('entry_date', date)
+          .order('entry_date', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('journal_entries')
+          .select('entry_date')
+          .gt('entry_date', date)
+          .order('entry_date', { ascending: true })
+          .limit(1)
+          .maybeSingle(),
+      ])
+      if (prevRes.error) throw prevRes.error
+      if (nextRes.error) throw nextRes.error
+      return {
+        prev: (prevRes.data?.entry_date as string | undefined) ?? null,
+        next: (nextRes.data?.entry_date as string | undefined) ?? null,
+      }
+    },
+    enabled: !!date,
   })
 }
 
