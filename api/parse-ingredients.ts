@@ -142,7 +142,7 @@ export async function POST(req: Request): Promise<Response> {
 
   try {
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5',
       max_tokens: 2048,
       messages: [
         { role: 'user', content: buildPrompt(ingredientText, categories) },

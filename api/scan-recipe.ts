@@ -23,7 +23,7 @@ const ALLOWED_MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp
 type MediaType = (typeof ALLOWED_MEDIA_TYPES)[number]
 
 const MAX_IMAGES = 5
-const MODEL = 'claude-sonnet-4-6'
+const MODEL = 'claude-sonnet-5'
 const MAX_TOKENS = 4000
 
 // Anthropic rejects a single image over 5 MB; Vercel serverless bodies cap at
