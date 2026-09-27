@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import type { RecipePrefill } from './AddRecipeSheet'
 import { resizeImage } from '../lib/helpers'
-import { scanRecipe, scannedRecipeToPrefill, blobToBase64 } from '../lib/scanRecipe'
+import { scanRecipe, scannedRecipeToPrefill, blobToBase64, scanErrorMessage } from '../lib/scanRecipe'
 
 interface ScanRecipeModalProps {
   onClose: () => void
@@ -103,8 +103,11 @@ export default function ScanRecipeModal({ onClose, onScanned }: ScanRecipeModalP
       )
       const recipe = await scanRecipe(images)
       onScanned(scannedRecipeToPrefill(recipe))
-    } catch {
-      setError("Couldn't read the recipe. Try clearer photos or add manually.")
+    } catch (err) {
+      // Full diagnostics (status, code, server debug payload) are already
+      // logged by scanRecipe(); this just records where it surfaced.
+      console.error('[scan-recipe] scan failed in ScanRecipeModal', err)
+      setError(scanErrorMessage(err))
       setScanning(false)
     }
   }
