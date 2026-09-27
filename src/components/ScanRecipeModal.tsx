@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import type { RecipePrefill } from './AddRecipeSheet'
 import { resizeImage } from '../lib/helpers'
-import { scanRecipe, scannedRecipeToPrefill, blobToBase64, scanErrorMessage } from '../lib/scanRecipe'
+import { scanRecipe, scannedRecipeToPrefill, blobToBase64, scanErrorMessage, ScanRecipeError } from '../lib/scanRecipe'
 
 interface ScanRecipeModalProps {
   onClose: () => void
@@ -25,10 +25,40 @@ function Spinner() {
   )
 }
 
+/** Serialize a scan failure into a pasteable diagnostic block. */
+function formatScanErrorDetails(err: unknown, photoCount: number): string {
+  const base: Record<string, unknown> = {
+    when: new Date().toISOString(),
+    photos: photoCount,
+    user_agent: navigator.userAgent,
+  }
+  if (err instanceof ScanRecipeError) {
+    return JSON.stringify(
+      { ...base, code: err.code, status: err.status, message: err.message, debug: err.debug },
+      null,
+      2,
+    )
+  }
+  return JSON.stringify(
+    {
+      ...base,
+      error_type: err instanceof Error ? err.name : typeof err,
+      message: err instanceof Error ? err.message : String(err),
+    },
+    null,
+    2,
+  )
+}
+
 export default function ScanRecipeModal({ onClose, onScanned }: ScanRecipeModalProps) {
   const [photos, setPhotos] = useState<StagedPhoto[]>([])
   const [scanning, setScanning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Diagnostic payload for the last failure, shown behind a toggle so it can
+  // be read and copied from a phone where there is no console.
+  const [errorDetails, setErrorDetails] = useState<string | null>(null)
+  const [showDetails, setShowDetails] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragIndexRef = useRef<number | null>(null)
@@ -94,6 +124,9 @@ export default function ScanRecipeModal({ onClose, onScanned }: ScanRecipeModalP
     if (photos.length === 0) return
     setScanning(true)
     setError(null)
+    setErrorDetails(null)
+    setShowDetails(false)
+    setCopied(false)
     try {
       const images = await Promise.all(
         photos.map(async (p) => ({
@@ -108,7 +141,20 @@ export default function ScanRecipeModal({ onClose, onScanned }: ScanRecipeModalP
       // logged by scanRecipe(); this just records where it surfaced.
       console.error('[scan-recipe] scan failed in ScanRecipeModal', err)
       setError(scanErrorMessage(err))
+      setErrorDetails(formatScanErrorDetails(err, photos.length))
       setScanning(false)
+    }
+  }
+
+  const copyDetails = async () => {
+    if (!errorDetails) return
+    try {
+      await navigator.clipboard.writeText(errorDetails)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard API unavailable (e.g. insecure context) — the text is
+      // selectable in the <pre> below as a fallback.
     }
   }
 
@@ -202,9 +248,48 @@ export default function ScanRecipeModal({ onClose, onScanned }: ScanRecipeModalP
               )}
 
               {error && (
-                <p className="text-xs mb-3" style={{ color: '#C0473E' }}>
-                  {error}
-                </p>
+                <div className="mb-3">
+                  <p className="text-xs" style={{ color: '#C0473E' }}>
+                    {error}
+                  </p>
+                  {errorDetails && (
+                    <div className="mt-1.5">
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setShowDetails((v) => !v)}
+                          className="text-[11px] font-medium cursor-pointer underline underline-offset-2"
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
+                          {showDetails ? 'Hide details' : 'Show details'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={copyDetails}
+                          className="text-[11px] font-medium cursor-pointer underline underline-offset-2"
+                          style={{ color: 'var(--text-secondary)' }}
+                        >
+                          {copied ? 'Copied!' : 'Copy details'}
+                        </button>
+                      </div>
+                      {showDetails && (
+                        <pre
+                          className="mt-2 p-2.5 rounded-lg text-[10px] leading-snug overflow-x-auto whitespace-pre-wrap break-all select-text"
+                          style={{
+                            backgroundColor: 'var(--bg-page)',
+                            border: '1px solid var(--border-card)',
+                            color: 'var(--text-primary)',
+                            maxHeight: '40vh',
+                            overflowY: 'auto',
+                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                          }}
+                        >
+                          {errorDetails}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* Add a page */}
