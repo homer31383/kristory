@@ -67,12 +67,21 @@ export default function Library() {
 
   return (
     <div className="pb-24">
-      <h1
-        className="text-2xl mb-4"
-        style={{ fontFamily: "'Playfair Display', serif", fontWeight: 700, color: 'var(--text-primary)' }}
-      >
-        The Library
-      </h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1
+          className="text-2xl"
+          style={{ fontFamily: "'Playfair Display', serif", fontWeight: 700, color: 'var(--text-primary)' }}
+        >
+          The Library
+        </h1>
+        <button
+          onClick={() => navigate('/library/river')}
+          className="px-3 py-2 rounded-lg text-sm font-medium cursor-pointer"
+          style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-card)', color: 'var(--text-primary)' }}
+        >
+          🌊 River
+        </button>
+      </div>
 
       {/* Search */}
       <div className="relative mb-6">

@@ -1,7 +1,8 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { format, parse, differenceInWeeks, differenceInDays, differenceInMonths } from 'date-fns'
-import { useEntriesByMonth, useCreateEntry } from '../hooks/useEntries'
+import { useEntriesByMonth, useCreateEntry, useSearchEntries } from '../hooks/useEntries'
+import { useDebouncedValue } from '../hooks/useDebounce'
 import { useBabyProfile } from '../hooks/useBaby'
 import { getTodayString, truncateText, getStorageUrl, formatDateHeading } from '../lib/helpers'
 import { useBackupSettings, isBackupOverdue } from '../hooks/useBackup'
@@ -467,12 +468,200 @@ function BackupReminderWidget() {
   )
 }
 
+// ─── Journal search ────────────────────────────────────────────────────
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Render an excerpt of the section text centered on the first matching term,
+ * with every matched term highlighted. Falls back to a plain leading excerpt
+ * when no term is found in the body (e.g. the match was on a tagged item).
+ */
+function HighlightedExcerpt({ content, query }: { content: string; query: string }) {
+  const stripped = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+  const terms = query.trim().split(/\s+/).filter(Boolean)
+  if (!stripped) return null
+  if (terms.length === 0) {
+    return (
+      <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)' }}>
+        {truncateText(stripped, 160)}
+      </p>
+    )
+  }
+
+  const matcher = new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'i')
+  const firstMatch = stripped.search(matcher)
+
+  // Build a window around the first match so the term is visible in the excerpt.
+  const WINDOW = 180
+  let start = 0
+  if (firstMatch > 60) start = firstMatch - 60
+  let excerpt = stripped.slice(start, start + WINDOW)
+  if (start > 0) excerpt = '…' + excerpt
+  if (start + WINDOW < stripped.length) excerpt = excerpt + '…'
+
+  const splitter = new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'gi')
+  const isTerm = new RegExp(`^(${terms.map(escapeRegExp).join('|')})$`, 'i')
+  const parts = excerpt.split(splitter)
+
+  return (
+    <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)' }}>
+      {parts.map((part, i) =>
+        isTerm.test(part) ? (
+          <mark
+            key={i}
+            style={{ backgroundColor: '#F0C987', color: 'var(--text-primary)', borderRadius: '2px', padding: '0 1px' }}
+          >
+            {part}
+          </mark>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </p>
+  )
+}
+
+function JournalSearchResultCard({
+  entry,
+  query,
+  onClick,
+}: {
+  entry: JournalEntry
+  query: string
+  onClick: () => void
+}) {
+  const date = parse(entry.entry_date, 'yyyy-MM-dd', new Date())
+  const dateLabel = format(date, 'MMM d, yyyy')
+  const photos = (entry.photos ?? []).slice(0, 3)
+
+  // Prefer a section whose content actually contains a search term so the
+  // highlighted excerpt lands on the match; otherwise use the first section.
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const sections = entry.sections ?? []
+  const matchingSection =
+    sections.find((s) => {
+      const text = (s.content ?? '').replace(/<[^>]*>/g, ' ').toLowerCase()
+      return terms.some((t) => text.includes(t))
+    }) ?? sections[0]
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left rounded-xl border p-4 transition-all duration-150 hover:shadow-md cursor-pointer"
+      style={{
+        backgroundColor: 'var(--bg-card)',
+        borderColor: 'var(--border-card)',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+      }}
+    >
+      <div className="flex gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+            {dateLabel}
+          </div>
+          {matchingSection?.content && (
+            <HighlightedExcerpt content={matchingSection.content} query={query} />
+          )}
+        </div>
+        {photos.length > 0 && (
+          <div className="flex gap-1.5 flex-shrink-0">
+            {photos.map((photo) => (
+              <div key={photo.id} className="w-14 h-14 rounded-lg overflow-hidden">
+                <img
+                  src={getStorageUrl(photo.storage_path)}
+                  alt=""
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </button>
+  )
+}
+
+function JournalSearchResults({
+  searching,
+  query,
+  results,
+  onSelect,
+}: {
+  searching: boolean
+  query: string
+  results: JournalEntry[]
+  onSelect: (date: string) => void
+}) {
+  if (searching) {
+    return (
+      <div className="space-y-3 mt-2">
+        {[1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="h-20 rounded-xl animate-pulse"
+            style={{ backgroundColor: 'var(--bg-card)' }}
+          />
+        ))}
+      </div>
+    )
+  }
+  if (results.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <div className="text-3xl mb-2">🔍</div>
+        <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+          No entries found for "{query}"
+        </p>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-3 mt-2 pb-4">
+      <p
+        className="text-xs font-semibold uppercase tracking-wider"
+        style={{ color: 'var(--text-muted)' }}
+      >
+        {results.length} result{results.length !== 1 ? 's' : ''}
+      </p>
+      {results.map((entry) => (
+        <JournalSearchResultCard
+          key={entry.id}
+          entry={entry}
+          query={query}
+          onClick={() => onSelect(entry.entry_date)}
+        />
+      ))}
+    </div>
+  )
+}
+
 export default function Journal() {
   const navigate = useNavigate()
   const today = getTodayString()
   const createEntry = useCreateEntry()
   const [showDatePicker, setShowDatePicker] = useState(false)
   const dateInputRef = useRef<HTMLInputElement>(null)
+
+  // ─── Search state ───
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchInput, setSearchInput] = useState('')
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const debouncedQuery = useDebouncedValue(searchInput, 300)
+  const { data: searchResults = [], isLoading: searching } = useSearchEntries(debouncedQuery)
+  const isSearching = searchInput.trim().length > 0
+
+  const openSearch = () => {
+    setSearchOpen(true)
+    setTimeout(() => searchInputRef.current?.focus(), 50)
+  }
+  const closeSearch = () => {
+    setSearchOpen(false)
+    setSearchInput('')
+  }
 
   const {
     data,
@@ -571,15 +760,92 @@ export default function Journal() {
       <BabyCountdownWidget />
       <BackupReminderWidget />
 
-      {/* Today Section */}
-      <div className="mb-8">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 mb-1">
         <h1
-          className="text-2xl mb-1"
+          className="text-2xl"
           style={{ fontFamily: "'Playfair Display', serif", fontWeight: 700, color: 'var(--text-primary)' }}
         >
           {formatDateHeading(today)}
         </h1>
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          <button
+            onClick={() => (searchOpen ? closeSearch() : openSearch())}
+            aria-label="Search entries"
+            title="Search entries"
+            className="flex items-center justify-center w-9 h-9 rounded-lg transition-colors cursor-pointer"
+            style={{ color: searchOpen ? 'var(--accent)' : 'var(--text-secondary)' }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" />
+            </svg>
+          </button>
+          <button
+            onClick={() => navigate('/photos')}
+            aria-label="Photo Memories"
+            title="Photo Memories"
+            className="flex items-center justify-center w-9 h-9 rounded-lg transition-colors cursor-pointer"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <path d="M21 15l-5-5L5 21" />
+            </svg>
+          </button>
+        </div>
+      </div>
 
+      {/* Inline search field */}
+      {searchOpen && (
+        <div className="relative mt-3 mb-6">
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
+            style={{ color: 'var(--text-muted)' }}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path strokeLinecap="round" d="M21 21l-4.35-4.35" />
+          </svg>
+          <input
+            ref={searchInputRef}
+            type="text"
+            placeholder="Search journal entries..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="w-full rounded-xl border py-3 pl-10 pr-10 text-sm"
+            style={{
+              backgroundColor: 'var(--input-bg)',
+              borderColor: 'var(--border-card)',
+              color: 'var(--text-primary)',
+            }}
+          />
+          <button
+            onClick={closeSearch}
+            aria-label="Close search"
+            className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center text-xs cursor-pointer"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {isSearching ? (
+        <JournalSearchResults
+          searching={searching}
+          query={debouncedQuery}
+          results={searchResults}
+          onSelect={(date) => navigate(`/journal/${date}`)}
+        />
+      ) : (
+      <>
+      {/* Today Section */}
+      <div className="mb-8 mt-4">
         {isLoading ? (
           <div className="mt-4 space-y-3">
             {[1, 2, 3].map((i) => (
@@ -685,6 +951,8 @@ export default function Journal() {
             style={{ borderColor: 'var(--border-card)', borderTopColor: 'var(--accent)' }}
           />
         </div>
+      )}
+      </>
       )}
 
       {/* FAB */}

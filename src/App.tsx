@@ -21,6 +21,9 @@ import TripDetail from './views/TripDetail'
 import Baby from './views/Baby'
 import Settings from './views/Settings'
 import FamilyFeed from './views/FamilyFeed'
+import FamilyPhotos from './views/FamilyPhotos'
+import PhotoMemories from './views/PhotoMemories'
+import LibraryRiver from './views/LibraryRiver'
 import BabyShower from './views/BabyShower'
 import ShowerManage from './views/ShowerManage'
 import Registry from './views/Registry'
@@ -56,7 +59,38 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<AppPinLock><UserPicker /></AppPinLock>} />
+      <Route
+        path="/photos"
+        element={
+          <AppPinLock>
+            <RequireUser>
+              <PhotoMemories />
+            </RequireUser>
+          </AppPinLock>
+        }
+      />
       <Route path="/family" element={<FamilyFeed />} />
+      <Route path="/family/photos" element={<FamilyPhotos />} />
+      <Route
+        path="/library/river"
+        element={
+          <AppPinLock>
+            <RequireUser>
+              <LibraryRiver />
+            </RequireUser>
+          </AppPinLock>
+        }
+      />
+      <Route
+        path="/library/:categoryId/river"
+        element={
+          <AppPinLock>
+            <RequireUser>
+              <LibraryRiver />
+            </RequireUser>
+          </AppPinLock>
+        }
+      />
       <Route path="/shower" element={<BabyShower />} />
       <Route path="/shower/m" element={<ShowerManage />} />
       <Route

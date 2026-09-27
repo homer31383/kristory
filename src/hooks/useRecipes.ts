@@ -202,3 +202,43 @@ export function useRecipe(id: string) {
     enabled: !!id,
   })
 }
+
+/**
+ * Case-insensitive search across Home Cooking recipes by name, ingredients,
+ * and instructions. Uses PostgREST `.or()` with ilike on each column.
+ */
+export function useSearchRecipes(query: string) {
+  const q = query.trim()
+  return useQuery({
+    queryKey: ['home-cooking-search', q],
+    queryFn: async () => {
+      if (!q) return []
+
+      const { data: cat } = await supabase
+        .from('categories')
+        .select('id')
+        .ilike('name', 'home cooking')
+        .maybeSingle()
+
+      if (!cat) return []
+
+      // Commas and parentheses are structural in PostgREST or-filters, so strip
+      // them from the user's term rather than risk a malformed filter.
+      const safe = q.replace(/[,()]/g, ' ').replace(/\s+/g, ' ').trim()
+      if (!safe) return []
+      const pattern = `%${safe}%`
+
+      const { data, error } = await supabase
+        .from('tagged_items')
+        .select(RECIPE_SELECT)
+        .eq('category_id', cat.id)
+        .or(`name.ilike.${pattern},ingredients.ilike.${pattern},instructions.ilike.${pattern}`)
+        .order('name')
+        .limit(200)
+
+      if (error) throw error
+      return (data ?? []) as TaggedItem[]
+    },
+    enabled: q.length > 0,
+  })
+}

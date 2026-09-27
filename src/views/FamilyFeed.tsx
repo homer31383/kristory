@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parse, differenceInWeeks, differenceInDays, differenceInMonths } from 'date-fns'
 import { supabase } from '../lib/supabase'
@@ -361,22 +362,7 @@ function PostDetail({
             </div>
           )}
 
-          {/* Photos */}
-          {photos.length > 0 && (
-            <div>
-              {photos.map((photo, i) => (
-                <img
-                  key={i}
-                  src={getStorageUrl(photo.entry_photo!.storage_path)}
-                  alt=""
-                  style={{ width: '100%', display: 'block' }}
-                  loading="lazy"
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Caption */}
+          {/* Caption (above photos) */}
           <div style={{ padding: '14px 16px 16px' }}>
             {post.caption && (
               <p style={{
@@ -393,6 +379,21 @@ function PostDetail({
               {format(entryDate, 'MMMM d, yyyy')}
             </p>
           </div>
+
+          {/* Photos */}
+          {photos.length > 0 && (
+            <div>
+              {photos.map((photo, i) => (
+                <img
+                  key={i}
+                  src={getStorageUrl(photo.entry_photo!.storage_path)}
+                  alt=""
+                  style={{ width: '100%', display: 'block' }}
+                  loading="lazy"
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -793,12 +794,31 @@ function NamesTab() {
 type FeedTab = 'updates' | 'names'
 
 function FeedContent({ profile }: { profile: BabyProfile }) {
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { data, isLoading } = useFeedPosts(true)
   const posts = data?.posts ?? []
   const milestoneMap = data?.milestoneMap ?? new Map()
 
   const [selectedPost, setSelectedPost] = useState<FamilyPost | null>(null)
   const [activeTab, setActiveTab] = useState<FeedTab>('updates')
+
+  // Open a post directly when arriving via ?post=<id> (e.g. from the gallery).
+  const postParam = searchParams.get('post')
+  useEffect(() => {
+    if (postParam && posts.length > 0) {
+      const match = posts.find((p) => p.id === postParam)
+      if (match) setSelectedPost(match)
+    }
+  }, [postParam, posts])
+
+  const closePost = () => {
+    setSelectedPost(null)
+    if (searchParams.has('post')) {
+      searchParams.delete('post')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }
 
   const currentYear = new Date().getFullYear().toString()
 
@@ -835,7 +855,7 @@ function FeedContent({ profile }: { profile: BabyProfile }) {
       <PostDetail
         post={selectedPost}
         milestone={milestoneMap.get(selectedPost.entry_id)}
-        onBack={() => setSelectedPost(null)}
+        onBack={closePost}
       />
     )
   }
@@ -848,11 +868,38 @@ function FeedContent({ profile }: { profile: BabyProfile }) {
     }}>
       {/* Header */}
       <div style={{
+        position: 'relative',
         maxWidth: 540,
         margin: '0 auto',
         padding: '28px 16px 8px',
         textAlign: 'center',
       }}>
+        {/* Photo gallery link */}
+        <button
+          onClick={() => navigate('/family/photos')}
+          aria-label="Photo gallery"
+          style={{
+            position: 'absolute',
+            top: 24,
+            right: 16,
+            width: 36,
+            height: 36,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 10,
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            color: C.secondary,
+          }}
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <path d="M21 15l-5-5L5 21" />
+          </svg>
+        </button>
         <h1 style={{
           fontFamily: "'Playfair Display', serif",
           fontWeight: 700,

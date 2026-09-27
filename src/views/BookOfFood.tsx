@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { format, parse } from 'date-fns'
-import { useHomeCookingRecipes, useRecipeTags } from '../hooks/useRecipes'
+import { useHomeCookingRecipes, useRecipeTags, useSearchRecipes } from '../hooks/useRecipes'
+import { useDebouncedValue } from '../hooks/useDebounce'
 import type { TaggedItem } from '../types'
 import AddRecipeSheet, { type RecipePrefill } from '../components/AddRecipeSheet'
 import SuggestionModal from '../components/SuggestionModal'
@@ -77,6 +78,23 @@ export default function BookOfFood() {
   const { data: recipes = [], isLoading } = useHomeCookingRecipes(sort)
   const { data: recipeTags = [] } = useRecipeTags()
 
+  // ─── Search state ───
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchInput, setSearchInput] = useState('')
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const debouncedQuery = useDebouncedValue(searchInput, 300)
+  const { data: searchResults = [], isLoading: searching } = useSearchRecipes(debouncedQuery)
+  const isSearching = searchInput.trim().length > 0
+
+  const openSearch = () => {
+    setSearchOpen(true)
+    setTimeout(() => searchInputRef.current?.focus(), 50)
+  }
+  const closeSearch = () => {
+    setSearchOpen(false)
+    setSearchInput('')
+  }
+
   const filteredRecipes = useMemo(() => {
     if (selectedTagIds.size === 0) return recipes
     return recipes.filter((r) => {
@@ -133,13 +151,67 @@ export default function BookOfFood() {
 
       {/* Action buttons */}
       <div className="mt-3 mb-4 space-y-2">
-        <button
-          onClick={() => setShowSuggestions(true)}
-          className="w-full py-2.5 rounded-lg text-sm font-medium text-white cursor-pointer"
-          style={{ backgroundColor: 'var(--accent)' }}
-        >
-          What should we make?
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowSuggestions(true)}
+            className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white cursor-pointer"
+            style={{ backgroundColor: 'var(--accent)' }}
+          >
+            What should we make?
+          </button>
+          <button
+            onClick={() => (searchOpen ? closeSearch() : openSearch())}
+            aria-label="Search recipes"
+            title="Search recipes"
+            className="w-11 flex items-center justify-center rounded-lg border cursor-pointer transition-colors"
+            style={{
+              borderColor: searchOpen ? 'var(--accent)' : 'var(--border-card)',
+              backgroundColor: searchOpen ? 'var(--accent)' : 'var(--bg-card)',
+              color: searchOpen ? 'white' : 'var(--text-secondary)',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" />
+            </svg>
+          </button>
+        </div>
+        {searchOpen && (
+          <div className="relative">
+            <svg
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
+              style={{ color: 'var(--text-muted)' }}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path strokeLinecap="round" d="M21 21l-4.35-4.35" />
+            </svg>
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search recipes, ingredients, instructions..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-full rounded-xl border py-3 pl-10 pr-10 text-sm"
+              style={{
+                backgroundColor: 'var(--input-bg)',
+                borderColor: 'var(--border-card)',
+                color: 'var(--text-primary)',
+              }}
+            />
+            <button
+              onClick={closeSearch}
+              aria-label="Close search"
+              className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center text-xs cursor-pointer"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
         <div className="flex gap-2">
           <button
             onClick={openManualAdd}
@@ -166,6 +238,37 @@ export default function BookOfFood() {
         </div>
       </div>
 
+      {isSearching ? (
+        /* Search results */
+        searching ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-20 rounded-xl animate-pulse" style={{ backgroundColor: 'var(--bg-card)' }} />
+            ))}
+          </div>
+        ) : searchResults.length > 0 ? (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>
+              {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+            </p>
+            {searchResults.map((item) => (
+              <RecipeCard
+                key={item.id}
+                item={item}
+                onClick={() => navigate(`/recipes/${item.id}`)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12">
+            <div className="text-3xl mb-2">🔍</div>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              No recipes found for "{debouncedQuery}"
+            </p>
+          </div>
+        )
+      ) : (
+      <>
       {/* Tag filter pills */}
       <div className="flex flex-wrap gap-1.5 pb-3">
         <button
@@ -248,6 +351,8 @@ export default function BookOfFood() {
               : 'Add your first recipe to start building your cookbook!'}
           </p>
         </div>
+      )}
+      </>
       )}
 
       {/* Add Recipe Sheet (also used to review a scanned recipe) */}
