@@ -96,6 +96,14 @@ export default function EntryDetail() {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
   }, [date])
 
+  // Quick action (/?action=new-entry): open the composer for today right away.
+  // Runs after the reset above, so it wins on the first render.
+  useEffect(() => {
+    if (date !== today || sessionStorage.getItem('kristory-quick-action') !== 'new-entry') return
+    sessionStorage.removeItem('kristory-quick-action')
+    setIsEditing(true)
+  }, [date, today])
+
   // Load the entry's section content into the editor ONLY when a different
   // entry arrives. Every autosave invalidates ['entry', date] and refetches;
   // resetting the editor content from that refetch (whose HTML is sanitized

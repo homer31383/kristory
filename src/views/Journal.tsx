@@ -743,6 +743,13 @@ export default function Journal() {
     }
   }, [todayEntry, today, navigate, createEntry])
 
+  // Quick action (/?action=new-entry): go straight to today's entry. The flag
+  // is cleared by EntryDetail once it opens the composer.
+  useEffect(() => {
+    if (sessionStorage.getItem('kristory-quick-action') !== 'new-entry') return
+    navigate(`/journal/${today}`, { replace: true })
+  }, [navigate, today])
+
   const handleEntryClick = (date: string) => {
     navigate(`/journal/${date}`)
   }

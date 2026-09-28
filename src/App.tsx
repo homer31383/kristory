@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { UserProvider, useUser } from './hooks/useUser'
@@ -124,7 +125,22 @@ function AppRoutes() {
   )
 }
 
+// URL quick actions: /?action=new-entry. The param is stripped right away so
+// a refresh does not re-trigger it. The action waits in sessionStorage through
+// the PIN screen and user picker; Journal and EntryDetail pick it up.
+function takeQuickAction() {
+  const params = new URLSearchParams(window.location.search)
+  const action = params.get('action')
+  if (!action) return
+  params.delete('action')
+  const qs = params.toString()
+  window.history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : '') + window.location.hash)
+  if (action === 'new-entry') sessionStorage.setItem('kristory-quick-action', action)
+}
+
 export default function App() {
+  useEffect(() => { takeQuickAction() }, [])
+
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
