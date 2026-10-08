@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 import { getStorageUrl, truncateText } from '../lib/helpers'
 import { getMediaUrl, sortMedia } from '../lib/media'
 import MediaList from '../components/media/MediaList'
+import Lightbox, { type LightboxItem } from '../components/ui/Lightbox'
 import type { FamilyPost, BabyProfile, BabyNameSuggestion } from '../types'
 
 // -- Design tokens --
@@ -315,6 +316,16 @@ function PostDetail({
     .filter(p => p.entry_photo?.storage_path)
 
   const media = getSharedMedia(post)
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  const videos = media.filter(m => m.file_type === 'video')
+  const lightboxItems: LightboxItem[] = [
+    ...videos.map((m): LightboxItem => ({
+      type: 'video',
+      src: m.file_url || getMediaUrl(m.file_path),
+      poster: m.thumbnail_path ? getMediaUrl(m.thumbnail_path) : null,
+    })),
+    ...photos.map((p): LightboxItem => ({ type: 'image', src: getStorageUrl(p.entry_photo!.storage_path) })),
+  ]
 
   const entryDate = post.entry?.entry_date
     ? parse(post.entry.entry_date, 'yyyy-MM-dd', new Date())
@@ -419,7 +430,8 @@ function PostDetail({
                   key={i}
                   src={getStorageUrl(photo.entry_photo!.storage_path)}
                   alt=""
-                  style={{ width: '100%', display: 'block' }}
+                  onClick={() => setLightboxIndex(videos.length + i)}
+                  style={{ width: '100%', display: 'block', cursor: 'zoom-in' }}
                   loading="lazy"
                 />
               ))}
@@ -427,6 +439,14 @@ function PostDetail({
           )}
         </div>
       </div>
+
+      {lightboxIndex !== null && (
+        <Lightbox
+          items={lightboxItems}
+          startIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
+      )}
     </div>
   )
 }

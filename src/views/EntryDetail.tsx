@@ -12,6 +12,7 @@ import RichTextEditor from '../components/RichTextEditor'
 import AddItemSheet from '../components/AddItemSheet'
 import BottomSheet from '../components/ui/BottomSheet'
 import MediaAttachments from '../components/media/MediaAttachments'
+import Lightbox, { type LightboxItem } from '../components/ui/Lightbox'
 import { formatDuration, getMediaUrl, sortMedia } from '../lib/media'
 import type { EntrySection } from '../types'
 
@@ -61,7 +62,7 @@ export default function EntryDetail() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [pastingPhoto, setPastingPhoto] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
-  const [lightboxPhoto, setLightboxPhoto] = useState<string | null>(null)
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [editingPhotos, setEditingPhotos] = useState(false)
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [showMoveSheet, setShowMoveSheet] = useState(false)
@@ -323,7 +324,7 @@ export default function EntryDetail() {
   // selection / caret drags) and while any overlay is open.
   const touchStartRef = useRef<{ x: number; y: number; t: number } | null>(null)
   const swipeBlocked =
-    isEditing || !!lightboxPhoto || showAddItem || showMoveSheet || showTripSheet || showMilestoneSheet
+    isEditing || lightboxIndex !== null || showAddItem || showMoveSheet || showTripSheet || showMilestoneSheet
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length !== 1) { touchStartRef.current = null; return }
     const t = e.touches[0]
@@ -469,6 +470,19 @@ export default function EntryDetail() {
   const sections = entry?.sections ?? []
   const photos = entry?.photos ?? []
   const media = sortMedia(entry?.media)
+  // Lightbox sequence follows page order: video clips (shown above photos),
+  // then photos.
+  const lightboxVideos = media.filter((m) => m.file_type === 'video')
+  const lightboxItems: LightboxItem[] = [
+    ...lightboxVideos.map((m): LightboxItem => ({
+      type: 'video',
+      src: m.file_url || getMediaUrl(m.file_path),
+      poster: m.thumbnail_path ? getMediaUrl(m.thumbnail_path) : null,
+    })),
+    ...[...photos]
+      .sort((a, b) => a.display_order - b.display_order)
+      .map((p): LightboxItem => ({ type: 'image', src: getStorageUrl(p.storage_path) })),
+  ]
   const taggedItems = entry?.tagged_items ?? []
   const mySection = sections.find((s) => s.user_id === user?.id)
   const otherSections = sections.filter((s) => s.user_id !== user?.id)
@@ -735,14 +749,14 @@ export default function EntryDetail() {
           <div className="flex gap-2 overflow-x-auto photo-scroll pb-2">
             {photos
               .sort((a, b) => a.display_order - b.display_order)
-              .map((photo) => (
+              .map((photo, photoIndex) => (
                 <div key={photo.id} className="relative flex-shrink-0">
                   <img
                     src={getStorageUrl(photo.storage_path)}
                     alt=""
                     className="w-24 h-24 object-cover rounded-lg cursor-pointer"
                     onClick={() => {
-                      if (!editingPhotos) setLightboxPhoto(getStorageUrl(photo.storage_path))
+                      if (!editingPhotos) setLightboxIndex(lightboxVideos.length + photoIndex)
                     }}
                     style={editingPhotos ? { opacity: 0.7 } : undefined}
                     loading="lazy"
@@ -1341,25 +1355,12 @@ export default function EntryDetail() {
       />
 
       {/* Photo Lightbox */}
-      {lightboxPhoto && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center backdrop"
-          style={{ backgroundColor: 'rgba(0,0,0,0.85)' }}
-          onClick={() => setLightboxPhoto(null)}
-        >
-          <img
-            src={lightboxPhoto}
-            alt=""
-            className="max-w-full max-h-full object-contain p-4"
-          />
-          <button
-            onClick={() => setLightboxPhoto(null)}
-            className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full text-white text-xl cursor-pointer"
-            style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}
-          >
-            ✕
-          </button>
-        </div>
+      {lightboxIndex !== null && (
+        <Lightbox
+          items={lightboxItems}
+          startIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
       )}
 
       {/* Pasting photo indicator */}
