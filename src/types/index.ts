@@ -10,6 +10,7 @@ export interface JournalEntry {
   updated_at: string
   sections?: EntrySection[]
   photos?: EntryPhoto[]
+  media?: JournalMedia[]
   tagged_items?: TaggedItem[]
   trip_entries?: TripEntry[]
 }
@@ -29,6 +30,25 @@ export interface EntryPhoto {
   user_id: string
   storage_path: string
   display_order: number
+  created_at: string
+}
+
+export type MediaFileType = 'video' | 'audio'
+
+export interface JournalMedia {
+  id: string
+  entry_id: string
+  user_id: string
+  file_path: string
+  file_url: string
+  file_type: MediaFileType
+  mime_type: string
+  file_size_bytes: number | null
+  duration_seconds: number | null
+  thumbnail_path: string | null
+  caption: string | null
+  share_to_family: boolean
+  sort_order: number
   created_at: string
 }
 
@@ -151,7 +171,7 @@ export interface FamilyPost {
   created_at: string
   updated_at: string
   photos?: FamilyPostPhoto[]
-  entry?: { entry_date: string }
+  entry?: { entry_date: string; media?: JournalMedia[] }
 }
 
 export interface FamilyPostPhoto {

@@ -5,11 +5,14 @@ import { useTrips, useAddEntryToTrip, useRemoveEntryFromTrip } from '../hooks/us
 import { useBabyMilestones, useCreateBabyMilestone, useDeleteBabyMilestone, PREGNANCY_MILESTONES, FIRST_YEAR_MILESTONES } from '../hooks/useBaby'
 import { useFamilyPostForEntry, useCreateFamilyPost, useUpdateFamilyPost, useDeleteFamilyPost } from '../hooks/useFamilyFeed'
 import { useUser } from '../hooks/useUser'
+import { useUpdateMedia } from '../hooks/useMedia'
 import { formatDateHeading, getStorageUrl, resizeImage, getTodayString } from '../lib/helpers'
 import { DEBOUNCE_SAVE_MS } from '../lib/constants'
 import RichTextEditor from '../components/RichTextEditor'
 import AddItemSheet from '../components/AddItemSheet'
 import BottomSheet from '../components/ui/BottomSheet'
+import MediaAttachments from '../components/media/MediaAttachments'
+import { formatDuration, getMediaUrl, sortMedia } from '../lib/media'
 import type { EntrySection } from '../types'
 
 /** Returns the first image file found in a paste event's clipboard, or null. */
@@ -49,6 +52,7 @@ export default function EntryDetail() {
   const createFamilyPost = useCreateFamilyPost()
   const updateFamilyPost = useUpdateFamilyPost()
   const deleteFamilyPost = useDeleteFamilyPost()
+  const updateMedia = useUpdateMedia()
 
   const [isEditing, setIsEditing] = useState(false)
   const [localContent, setLocalContent] = useState('')
@@ -73,6 +77,8 @@ export default function EntryDetail() {
   const [familyShareOpen, setFamilyShareOpen] = useState(false)
   const [familyCaption, setFamilyCaption] = useState('')
   const [familySelectedPhotos, setFamilySelectedPhotos] = useState<Set<string>>(new Set())
+  // Tracked as exclusions so media added after this loads stays shared by default.
+  const [familyExcludedMedia, setFamilyExcludedMedia] = useState<Set<string>>(new Set())
   const [familySaving, setFamilySaving] = useState(false)
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
 
@@ -127,6 +133,7 @@ export default function EntryDetail() {
       setFamilyCaption(familyPost.caption ?? '')
       const photoIds = new Set((familyPost.photos ?? []).map(p => p.entry_photo_id))
       setFamilySelectedPhotos(photoIds)
+      setFamilyExcludedMedia(new Set((entry?.media ?? []).filter(m => !m.share_to_family).map(m => m.id)))
     } else if (!familyPostLoading) {
       setFamilyShareOpen(false)
     }
@@ -377,6 +384,7 @@ export default function EntryDetail() {
       setFamilyCaption(plainText)
       // Select all photos by default
       setFamilySelectedPhotos(new Set((entry?.photos ?? []).map(p => p.id)))
+      setFamilyExcludedMedia(new Set())
     }
   }
 
@@ -394,6 +402,16 @@ export default function EntryDetail() {
     setFamilySaving(true)
     try {
       const photoIds = Array.from(familySelectedPhotos)
+      // Media visibility lives on each journal_media row; only touch the ones that changed.
+      await Promise.all(
+        (entry.media ?? [])
+          .filter(m => m.share_to_family === familyExcludedMedia.has(m.id))
+          .map(m => updateMedia.mutateAsync({
+            mediaId: m.id,
+            entryDate: date!,
+            changes: { share_to_family: !familyExcludedMedia.has(m.id) },
+          }))
+      )
       if (familyPost) {
         await updateFamilyPost.mutateAsync({
           postId: familyPost.id,
@@ -413,6 +431,15 @@ export default function EntryDetail() {
       console.error('Failed to save family post:', err)
     }
     setFamilySaving(false)
+  }
+
+  const toggleFamilyMedia = (mediaId: string) => {
+    setFamilyExcludedMedia(prev => {
+      const next = new Set(prev)
+      if (next.has(mediaId)) next.delete(mediaId)
+      else next.add(mediaId)
+      return next
+    })
   }
 
   const toggleFamilyPhoto = (photoId: string) => {
@@ -441,6 +468,7 @@ export default function EntryDetail() {
 
   const sections = entry?.sections ?? []
   const photos = entry?.photos ?? []
+  const media = sortMedia(entry?.media)
   const taggedItems = entry?.tagged_items ?? []
   const mySection = sections.find((s) => s.user_id === user?.id)
   const otherSections = sections.filter((s) => s.user_id !== user?.id)
@@ -649,6 +677,14 @@ export default function EntryDetail() {
           )}
         </div>
       </div>
+
+      {/* Audio & video (below the text, above photos) */}
+      <MediaAttachments
+        entryDate={date}
+        media={media}
+        userId={user?.id}
+        ensureEntry={ensureEntry}
+      />
 
       {/* Photos */}
       <div className="mb-6">
@@ -984,6 +1020,51 @@ export default function EntryDetail() {
                       No photos selected (text-only post)
                     </p>
                   )}
+                </div>
+              )}
+
+              {/* Media selector */}
+              {media.length > 0 && (
+                <div>
+                  <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>
+                    Audio &amp; video to share
+                  </label>
+                  <div className="flex gap-2 flex-wrap">
+                    {media.map((m) => {
+                      const selected = !familyExcludedMedia.has(m.id)
+                      return (
+                        <button
+                          key={m.id}
+                          onClick={() => toggleFamilyMedia(m.id)}
+                          className="relative w-16 h-16 rounded-lg overflow-hidden cursor-pointer flex items-center justify-center"
+                          style={{
+                            opacity: selected ? 1 : 0.4,
+                            outline: selected ? '2px solid #6B5CA5' : 'none',
+                            outlineOffset: 1,
+                            backgroundColor: m.file_type === 'video' ? '#1a1a1a' : 'white',
+                            color: m.file_type === 'video' ? 'white' : '#6B5CA5',
+                          }}
+                          title={m.caption ?? undefined}
+                        >
+                          {m.file_type === 'video' && m.thumbnail_path && (
+                            <img src={getMediaUrl(m.thumbnail_path)} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+                          )}
+                          <span className="relative text-[10px] font-semibold px-1 rounded" style={m.file_type === 'video' ? { backgroundColor: 'rgba(0,0,0,0.55)' } : undefined}>
+                            {m.file_type === 'video' ? '▶' : '♪'} {formatDuration(m.duration_seconds)}
+                          </span>
+                          <div
+                            className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs"
+                            style={{
+                              backgroundColor: selected ? '#6B5CA5' : 'rgba(255,255,255,0.7)',
+                              color: selected ? 'white' : 'transparent',
+                            }}
+                          >
+                            {selected ? '✓' : ''}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
               )}
 

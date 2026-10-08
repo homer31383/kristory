@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { sanitizeHtml, getTodayString } from '../lib/helpers'
 import type { JournalEntry, EntrySection, EntryPhoto, TaggedItem } from '../types'
 
-const ENTRY_SELECT = '*, sections:entry_sections!entry_id(*, user:users!user_id(id, name)), photos:entry_photos!entry_id(*), tagged_items:tagged_items!entry_id(*, category:categories!category_id(*)), trip_entries:trip_entries!entry_id(*, trip:trips!trip_id(*))'
+const ENTRY_SELECT = '*, sections:entry_sections!entry_id(*, user:users!user_id(id, name)), photos:entry_photos!entry_id(*), media:journal_media!entry_id(*), tagged_items:tagged_items!entry_id(*, category:categories!category_id(*)), trip_entries:trip_entries!entry_id(*, trip:trips!trip_id(*))'
 
 export function useEntry(date: string) {
   return useQuery({
@@ -64,7 +64,7 @@ export function useCreateEntry() {
       return data as JournalEntry
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(['entry', data.entry_date], { ...data, sections: [], photos: [], tagged_items: [], trip_entries: [] })
+      queryClient.setQueryData(['entry', data.entry_date], { ...data, sections: [], photos: [], media: [], tagged_items: [], trip_entries: [] })
       queryClient.invalidateQueries({ queryKey: ['entries'] })
       queryClient.invalidateQueries({ queryKey: ['adjacent-entries'] })
     },

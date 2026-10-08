@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parse, differenceInWeeks, differenceInDays, differenceInMonths } from 'date-fns'
 import { supabase } from '../lib/supabase'
 import { getStorageUrl, truncateText } from '../lib/helpers'
+import { getMediaUrl, sortMedia } from '../lib/media'
+import MediaList from '../components/media/MediaList'
 import type { FamilyPost, BabyProfile, BabyNameSuggestion } from '../types'
 
 // -- Design tokens --
@@ -21,6 +23,17 @@ const C = {
   error: '#E5534B',
   inputBg: '#F7F3EF',
 } as const
+
+// The Babory is always light; pin the audio player tokens so a Kristory
+// user's dark-mode preference doesn't leak in.
+const MEDIA_PLAYER_VARS = {
+  '--media-player-bg': C.card,
+  '--media-player-border': C.border,
+  '--media-player-ink': C.accent,
+  '--media-player-track': '#E2DAD0',
+  '--media-player-text': C.secondary,
+  '--media-player-shadow': 'none',
+} as React.CSSProperties
 
 const STORAGE_KEY = 'kristory-family-pin-ok'
 
@@ -46,7 +59,7 @@ function useFeedPosts(authenticated: boolean) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('family_posts')
-        .select('*, entry:journal_entries!entry_id(entry_date), photos:family_post_photos!family_post_id(display_order, entry_photo:entry_photos!entry_photo_id(storage_path))')
+        .select('*, entry:journal_entries!entry_id(entry_date, media:journal_media!entry_id(*)), photos:family_post_photos!family_post_id(display_order, entry_photo:entry_photos!entry_photo_id(storage_path))')
         .order('published_at', { ascending: false })
       if (error) throw error
 
@@ -142,11 +155,19 @@ function getPostDate(post: FamilyPost): string {
   return format(new Date(post.published_at), 'yyyy-MM-dd')
 }
 
+/** Entry media the family is allowed to see, in display order. */
+function getSharedMedia(post: FamilyPost) {
+  return sortMedia(post.entry?.media).filter(m => m.share_to_family)
+}
+
 function getFirstPhotoUrl(post: FamilyPost): string | null {
   const photos = (post.photos ?? [])
     .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
     .filter(p => p.entry_photo?.storage_path)
-  return photos[0] ? getStorageUrl(photos[0].entry_photo!.storage_path) : null
+  if (photos[0]) return getStorageUrl(photos[0].entry_photo!.storage_path)
+  // No photos: fall back to a video's poster frame.
+  const poster = getSharedMedia(post).find(m => m.thumbnail_path)
+  return poster ? getMediaUrl(poster.thumbnail_path!) : null
 }
 
 // -- Chevron icon --
@@ -293,6 +314,8 @@ function PostDetail({
     .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
     .filter(p => p.entry_photo?.storage_path)
 
+  const media = getSharedMedia(post)
+
   const entryDate = post.entry?.entry_date
     ? parse(post.entry.entry_date, 'yyyy-MM-dd', new Date())
     : new Date(post.published_at)
@@ -380,6 +403,14 @@ function PostDetail({
             </p>
           </div>
 
+          {/* Audio & video (below the text, before photos). preload="none"
+              keeps the feed light; nothing loads until someone taps play. */}
+          {media.length > 0 && (
+            <div style={{ padding: '0 16px 16px', ...MEDIA_PLAYER_VARS }}>
+              <MediaList media={media} preload="none" captionColor={C.secondary} />
+            </div>
+          )}
+
           {/* Photos */}
           {photos.length > 0 && (
             <div>
@@ -415,6 +446,13 @@ function PostCard({
   const dateLabel = format(d, 'MMM d, EEEE')
   const preview = post.caption ? truncateText(post.caption, 100) : ''
   const thumb = getFirstPhotoUrl(post)
+  const media = getSharedMedia(post)
+  const videoCount = media.filter(m => m.file_type === 'video').length
+  const audioCount = media.length - videoCount
+  const mediaLabel = [
+    videoCount ? `▶ ${videoCount} video${videoCount === 1 ? '' : 's'}` : '',
+    audioCount ? `♪ ${audioCount} audio clip${audioCount === 1 ? '' : 's'}` : '',
+  ].filter(Boolean).join(' · ')
 
   return (
     <button
@@ -474,6 +512,11 @@ function PostCard({
             }}>
               {preview}
             </p>
+          )}
+          {mediaLabel && (
+            <div style={{ fontSize: 11, fontWeight: 500, color: C.accent, marginTop: 6 }}>
+              {mediaLabel}
+            </div>
           )}
         </div>
         {thumb && (

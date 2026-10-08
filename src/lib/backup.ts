@@ -1,6 +1,7 @@
 import JSZip from 'jszip'
 import { supabase } from './supabase'
 import { getStorageUrl } from './helpers'
+import { getMediaUrl } from './media'
 import { format } from 'date-fns'
 
 export type BackupProgress = {
@@ -20,6 +21,17 @@ async function fetchAll(table: string, select = '*', order?: string): Promise<an
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as any[]
+}
+
+// For tables added by recent migrations: a backup shouldn't fail outright
+// just because the migration hasn't been run yet.
+async function fetchAllOptional(table: string, select = '*', order?: string): Promise<any[]> {
+  try {
+    return await fetchAll(table, select, order)
+  } catch (err) {
+    console.error(`[backup] Skipping ${table}:`, err)
+    return []
+  }
 }
 
 async function fetchData(onProgress: ProgressCallback) {
@@ -52,6 +64,7 @@ async function fetchData(onProgress: ProgressCallback) {
     showerHelpers,
     showerPhotos,
     showerMenu,
+    journalMedia,
   ] = await Promise.all([
     fetchAll('users', '*', 'name'),
     fetchAll('journal_entries', '*', 'entry_date'),
@@ -84,6 +97,7 @@ async function fetchData(onProgress: ProgressCallback) {
     fetchAll('baby_shower_helpers', '*', 'created_at'),
     fetchAll('baby_shower_photos', '*', 'created_at'),
     fetchAll('baby_shower_menu', '*', 'display_order'),
+    fetchAllOptional('journal_media', '*', 'sort_order'),
   ])
 
   return {
@@ -93,6 +107,7 @@ async function fetchData(onProgress: ProgressCallback) {
     trips, tripEntries, babyProfile, milestones,
     familyPosts, familyPostPhotos, nameSuggestions, appSettings,
     showerEvent, showerGuests, showerTasks, showerSchedule, showerHelpers, showerPhotos, showerMenu,
+    journalMedia,
   }
 }
 
@@ -121,6 +136,14 @@ function buildDataJson(raw: Awaited<ReturnType<typeof fetchData>>) {
     const arr = photosByEntry.get(p.entry_id) ?? []
     arr.push(p)
     photosByEntry.set(p.entry_id, arr)
+  }
+
+  // Build entry -> audio/video
+  const mediaByEntry = new Map<string, any[]>()
+  for (const m of raw.journalMedia) {
+    const arr = mediaByEntry.get(m.entry_id) ?? []
+    arr.push(m)
+    mediaByEntry.set(m.entry_id, arr)
   }
 
   // Build item -> participants
@@ -207,6 +230,20 @@ function buildDataJson(raw: Awaited<ReturnType<typeof fetchData>>) {
     const entryPhotos = (photosByEntry.get(entry.id) ?? [])
       .sort((a: any, b: any) => a.display_order - b.display_order)
       .map((p: any) => ({ storage_path: p.storage_path, display_order: p.display_order }))
+    const entryMedia = (mediaByEntry.get(entry.id) ?? [])
+      .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .map((m: any) => ({
+        file_path: m.file_path,
+        file_type: m.file_type,
+        mime_type: m.mime_type,
+        file_size_bytes: m.file_size_bytes,
+        duration_seconds: m.duration_seconds,
+        thumbnail_path: m.thumbnail_path,
+        caption: m.caption,
+        share_to_family: m.share_to_family,
+        sort_order: m.sort_order,
+        user_id: m.user_id,
+      }))
     const entryItems = itemsByEntry.get(entry.id) ?? []
     const trip = entryTripMap.get(entry.id)
     const familyPost = familyPostByEntry.get(entry.id)
@@ -215,6 +252,7 @@ function buildDataJson(raw: Awaited<ReturnType<typeof fetchData>>) {
       entry_date: entry.entry_date,
       sections: entrySections,
       photos: entryPhotos,
+      media: entryMedia,
       tagged_items: entryItems,
       ...(trip ? { trip } : {}),
       ...(familyPost ? { family_post: familyPost } : {}),
@@ -313,6 +351,7 @@ Exported: ${now}
 This backup contains:
 - ${raw.entries.length} journal entries (earliest: ${earliest} — latest: ${latest})
 - ${raw.photos.length} photos
+- ${raw.journalMedia.length} audio/video clips
 - ${raw.taggedItems.length} tagged items across ${raw.categories.length} categories
 - ${recipeCount} recipes
 - ${bookCount} books in the Library
@@ -868,11 +907,43 @@ CREATE TABLE IF NOT EXISTS baby_shower_menu (
 ALTER TABLE baby_shower_menu DISABLE ROW LEVEL SECURITY;
 
 -- ============================================
+-- JOURNAL MEDIA (audio + video on entries)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS journal_media (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  entry_id uuid NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES users(id),
+  file_path text NOT NULL,
+  file_url text NOT NULL,
+  file_type text NOT NULL CHECK (file_type IN ('video', 'audio')),
+  mime_type text NOT NULL,
+  file_size_bytes bigint,
+  duration_seconds numeric,
+  thumbnail_path text,
+  caption text,
+  share_to_family boolean NOT NULL DEFAULT true,
+  sort_order integer DEFAULT 0,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS journal_media_entry_id_idx ON journal_media(entry_id);
+ALTER TABLE journal_media DISABLE ROW LEVEL SECURITY;
+
+-- ============================================
 -- STORAGE BUCKET
 -- ============================================
 
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('kristory-photos', 'kristory-photos', true)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('kristory-media', 'kristory-media', true, 52428800, ARRAY[
+  'video/mp4', 'video/webm', 'video/quicktime',
+  'audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/ogg', 'audio/webm', 'audio/wav', 'audio/x-wav',
+  'image/jpeg'
+])
 ON CONFLICT (id) DO NOTHING;
 
 ------------ END SQL ------------
@@ -896,6 +967,15 @@ In the Supabase dashboard:
     WITH CHECK (bucket_id = 'kristory-photos');
   CREATE POLICY "Public delete" ON storage.objects FOR DELETE
     USING (bucket_id = 'kristory-photos');
+
+  The kristory-media bucket (audio/video) needs the same three policies:
+
+  CREATE POLICY "kristory-media public read" ON storage.objects FOR SELECT
+    USING (bucket_id = 'kristory-media');
+  CREATE POLICY "kristory-media public insert" ON storage.objects FOR INSERT
+    WITH CHECK (bucket_id = 'kristory-media');
+  CREATE POLICY "kristory-media public delete" ON storage.objects FOR DELETE
+    USING (bucket_id = 'kristory-media');
 
 ================================================================================
 5. SET UP THE APP
@@ -974,6 +1054,8 @@ a) MANUAL SQL APPROACH:
     22. baby_shower_schedule
     23. baby_shower_photos
     24. baby_shower_menu
+    25. journal_media (after uploading media files, see step 8;
+        file_url = {SUPABASE_URL}/storage/v1/object/public/kristory-media/{file_path})
 
 b) FUTURE RESTORE TOOL:
    - A "Restore from Backup" feature in Settings is planned
@@ -1003,6 +1085,15 @@ c) PROGRAMMATIC:
      .upload(storagePath, fileBlob, { contentType: 'image/jpeg' })
 
    The storage_path in data.json matches the path in the photos/ folder.
+
+Audio and video clips are in the media/ folder, organized as:
+  media/{entry_id}/{uuid}.{ext}         (the clip)
+  media/{entry_id}/{uuid}-thumb.jpg     (video poster frame)
+
+Upload them to the kristory-media bucket at the same paths, e.g.:
+   npx supabase storage cp ./media/ storage://kristory-media/ --recursive
+
+The file_path and thumbnail_path values in data.json match those paths.
 
 ================================================================================
 9. REBUILDING THE APP FROM SCRATCH
@@ -1071,6 +1162,45 @@ async function downloadPhotos(
   }
 }
 
+// ---- Audio/video download ----
+
+async function downloadMedia(
+  media: any[],
+  zip: JSZip,
+  onProgress: ProgressCallback,
+) {
+  const mediaFolder = zip.folder('media')!
+  const paths: string[] = media.flatMap((m: any) => (m.thumbnail_path ? [m.file_path, m.thumbnail_path] : [m.file_path]))
+  const total = paths.length
+  // Videos run up to 50MB each, so keep fewer in flight than photos.
+  const BATCH = 3
+
+  for (let i = 0; i < total; i += BATCH) {
+    const batch = paths.slice(i, i + BATCH)
+    const results = await Promise.allSettled(
+      batch.map(async (path) => {
+        const resp = await fetch(getMediaUrl(path))
+        if (!resp.ok) return null
+        return { path, blob: await resp.blob() }
+      })
+    )
+
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value) {
+        // Already-compressed formats; deflating them just burns time.
+        mediaFolder.file(result.value.path, result.value.blob, { compression: 'STORE' })
+      }
+    }
+
+    onProgress({
+      phase: 'Downloading audio & video',
+      detail: `${Math.min(i + BATCH, total)} of ${total}`,
+      current: Math.min(i + BATCH, total),
+      total,
+    })
+  }
+}
+
 // ---- Estimate size ----
 
 export async function estimateBackupSize(): Promise<{ photoCount: number; estimatedMB: number }> {
@@ -1079,8 +1209,12 @@ export async function estimateBackupSize(): Promise<{ photoCount: number; estima
     .select('*', { count: 'exact', head: true })
   if (error) throw error
   const photoCount = count ?? 0
+  // Audio/video sizes are stored, so add them exactly. Ignore failures
+  // (e.g. before the journal_media migration has run).
+  const { data: mediaRows } = await supabase.from('journal_media').select('file_size_bytes')
+  const mediaBytes = (mediaRows ?? []).reduce((sum, m) => sum + (Number(m.file_size_bytes) || 0), 0)
   // Rough estimate: ~200KB per resized photo + ~1MB for JSON data
-  const estimatedMB = Math.round((photoCount * 200) / 1024 + 1)
+  const estimatedMB = Math.round((photoCount * 200) / 1024 + 1 + mediaBytes / (1024 * 1024))
   return { photoCount, estimatedMB }
 }
 
@@ -1108,6 +1242,9 @@ export async function createFullBackup(onProgress: ProgressCallback) {
   // 4. Download photos
   if (raw.photos.length > 0) {
     await downloadPhotos(raw.photos, folder, onProgress)
+  }
+  if (raw.journalMedia.length > 0) {
+    await downloadMedia(raw.journalMedia, folder, onProgress)
   }
 
   // 5. Generate ZIP

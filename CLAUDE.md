@@ -91,6 +91,7 @@ All tables have RLS **disabled** — the app is private and trusts the client. T
 | `journal_entries` | One row per day, unique by `entry_date` |
 | `entry_sections` | One row per (entry, user) — each user's prose for that day |
 | `entry_photos` | Photos attached to a journal entry |
+| `journal_media` | Audio/video clips on an entry (`kristory-media` bucket, `share_to_family` controls Babory visibility). Migration `031_journal_media.sql` |
 | `categories` | Tag categories (Movies, Restaurants, Home Cooking, Baby, etc.) |
 | `tagged_items` | Tagged items — may be linked to an entry or standalone (recipes use this) |
 | `recipe_tags` | Pasta, Salad, Soup, etc. |
@@ -147,8 +148,11 @@ The `collapsible-content` CSS class uses `grid-template-rows: 0fr/1fr` for smoot
 ### Photo Storage
 Photos go to the public `kristory-photos` Supabase Storage bucket as `{entry_date}/{uuid}.jpg`. URLs constructed via `getStorageUrl(path)`.
 
+### Audio & Video
+Clips go to the public `kristory-media` bucket as `{entry_id}/{uuid}.{ext}` (50MB cap), with video posters at `{entry_id}/{uuid}-thumb.jpg`. Uploads use XHR in `src/lib/media.ts` for progress. Players live in `src/components/media/`; use `preload="none"` on the family feed. Deleting a journal entry must call `deleteEntryMediaFiles(entryId)` first: the rows cascade but bucket files don't.
+
 ### Family Feed Separation
-The `/family` route uses a completely separate page layout. It only ever queries `family_posts`, `family_post_photos`, `entry_photos`, `baby_profile`, `baby_milestones`, and `baby_name_suggestions` — never journal entries, tagged items, trips, etc.
+The `/family` route uses a completely separate page layout. It only ever queries `family_posts`, `family_post_photos`, `entry_photos`, `journal_media` (nested under the post's entry, filtered to `share_to_family`), `baby_profile`, `baby_milestones`, and `baby_name_suggestions` — never journal entries, tagged items, trips, etc.
 
 ## Known Quirks / Gotchas
 

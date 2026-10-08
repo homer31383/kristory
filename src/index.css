@@ -32,6 +32,14 @@
   --input-bg: #F7F3EF;
   --chris-color: #6B5CA5;
   --krista-color: #D4708F;
+
+  /* Audio player */
+  --media-player-bg: #F7F3EF;
+  --media-player-border: #DDD5CB;
+  --media-player-ink: #6B5CA5;
+  --media-player-track: #E2DAD0;
+  --media-player-text: #8C8078;
+  --media-player-shadow: none;
 }
 
 html.dark {
@@ -47,6 +55,14 @@ html.dark {
   --input-bg: #1E1E1E;
   --chris-color: #8B7EC8;
   --krista-color: #E88BA8;
+
+  /* Audio player: a strip of paper with ink-colored controls */
+  --media-player-bg: #E9E1D3;
+  --media-player-border: #CDBFA8;
+  --media-player-ink: #2A2420;
+  --media-player-track: #CDBFA8;
+  --media-player-text: #5E554B;
+  --media-player-shadow: 0 1px 0 rgba(255,255,255,0.06), 0 2px 6px rgba(0,0,0,0.35);
 
   --color-bg-page: #141414;
   --color-bg-card: #1E1E1E;
