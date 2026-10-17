@@ -41,6 +41,7 @@ export interface JournalMedia {
   user_id: string
   file_path: string
   file_url: string
+  file_name: string | null
   file_type: MediaFileType
   mime_type: string
   file_size_bytes: number | null

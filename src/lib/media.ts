@@ -89,6 +89,17 @@ export function getMediaUrl(path: string): string {
   return `${supabaseUrl}/storage/v1/object/public/${MEDIA_BUCKET}/${path}`
 }
 
+/**
+ * A clip's name for display: the original filename minus its media
+ * extension, or a name typed in the editor (left as-is, dots and all).
+ */
+export function mediaDisplayName(fileName: string | null | undefined): string | null {
+  if (!fileName) return null
+  const ext = extensionOf(fileName)
+  if (!(ext in MIME_BY_EXT)) return fileName
+  return fileName.slice(0, -(ext.length + 1)).trim() || fileName
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`

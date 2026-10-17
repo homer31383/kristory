@@ -7,6 +7,7 @@ import {
   formatDuration,
   generateVideoThumbnail,
   getMediaUrl,
+  mediaDisplayName,
   probeDuration,
   removeMediaFiles,
   sortMedia,
@@ -172,6 +173,7 @@ export default function MediaAttachments({ entryDate, media, userId, ensureEntry
         entryDate,
         userId,
         filePath,
+        fileName: file.name,
         fileType: info.kind,
         mimeType: info.mimeType,
         fileSizeBytes: file.size,
@@ -239,6 +241,14 @@ export default function MediaAttachments({ entryDate, media, userId, ensureEntry
     const caption = value.trim() || null
     if (caption === (m.caption ?? null)) return
     updateMedia.mutate({ mediaId: m.id, entryDate, changes: { caption } })
+  }
+
+  // Compared against the displayed name so focusing and leaving the field
+  // doesn't rewrite "Kicks.m4a" as "Kicks".
+  const saveName = (m: JournalMedia, value: string) => {
+    const name = value.trim() || null
+    if (name === mediaDisplayName(m.file_name)) return
+    updateMedia.mutate({ mediaId: m.id, entryDate, changes: { file_name: name } })
   }
 
   // ─── Reordering (drag on desktop, arrow buttons on touch) ───
@@ -448,6 +458,18 @@ export default function MediaAttachments({ entryDate, media, userId, ensureEntry
                   </div>
                 ) : (
                   <WaveBar />
+                )}
+                {m.file_type === 'audio' && (
+                  <input
+                    type="text"
+                    defaultValue={mediaDisplayName(m.file_name) ?? ''}
+                    placeholder="Name this clip"
+                    aria-label="Clip name"
+                    onBlur={(e) => saveName(m, e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                    className="mt-1.5 w-full rounded-md border px-1.5 py-1 text-xs font-medium"
+                    style={{ backgroundColor: 'var(--input-bg)', borderColor: 'var(--border-card)', color: 'var(--text-primary)' }}
+                  />
                 )}
                 <div className="mt-1.5 text-[11px] flex justify-between" style={{ color: 'var(--text-muted)' }}>
                   <span>{m.file_type === 'video' ? 'Video' : 'Audio'}{m.duration_seconds ? ` · ${formatDuration(m.duration_seconds)}` : ''}</span>

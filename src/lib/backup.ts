@@ -234,6 +234,7 @@ function buildDataJson(raw: Awaited<ReturnType<typeof fetchData>>) {
       .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
       .map((m: any) => ({
         file_path: m.file_path,
+        file_name: m.file_name ?? null,
         file_type: m.file_type,
         mime_type: m.mime_type,
         file_size_bytes: m.file_size_bytes,
@@ -916,6 +917,7 @@ CREATE TABLE IF NOT EXISTS journal_media (
   user_id uuid NOT NULL REFERENCES users(id),
   file_path text NOT NULL,
   file_url text NOT NULL,
+  file_name text,
   file_type text NOT NULL CHECK (file_type IN ('video', 'audio')),
   mime_type text NOT NULL,
   file_size_bytes bigint,

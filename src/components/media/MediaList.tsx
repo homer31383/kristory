@@ -1,4 +1,4 @@
-import { getMediaUrl, sortMedia } from '../../lib/media'
+import { getMediaUrl, mediaDisplayName, sortMedia } from '../../lib/media'
 import type { JournalMedia } from '../../types'
 import AudioPlayer from './AudioPlayer'
 import VideoPlayer from './VideoPlayer'
@@ -30,6 +30,7 @@ export default function MediaList({ media, preload = 'metadata', captionColor = 
               src={m.file_url || getMediaUrl(m.file_path)}
               durationHint={m.duration_seconds}
               preload={preload}
+              label={mediaDisplayName(m.file_name) ?? undefined}
             />
           )}
           {m.caption && (

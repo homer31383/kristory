@@ -23,6 +23,7 @@ export function useCreateMedia() {
       entryDate: string
       userId: string
       filePath: string
+      fileName: string
       fileType: MediaFileType
       mimeType: string
       fileSizeBytes: number
@@ -37,6 +38,7 @@ export function useCreateMedia() {
           user_id: params.userId,
           file_path: params.filePath,
           file_url: getMediaUrl(params.filePath),
+          file_name: params.fileName,
           file_type: params.fileType,
           mime_type: params.mimeType,
           file_size_bytes: params.fileSizeBytes,
@@ -61,7 +63,7 @@ export function useUpdateMedia() {
     mutationFn: async (params: {
       mediaId: string
       entryDate: string
-      changes: Partial<Pick<JournalMedia, 'caption' | 'share_to_family'>>
+      changes: Partial<Pick<JournalMedia, 'caption' | 'file_name' | 'share_to_family'>>
     }) => {
       const { error } = await supabase
         .from('journal_media')
