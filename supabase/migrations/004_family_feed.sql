@@ -8,6 +8,7 @@ CREATE TABLE family_posts (
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+grant select, insert, update, delete on public.family_posts to anon, authenticated, service_role;
 
 ALTER TABLE family_posts DISABLE ROW LEVEL SECURITY;
 
@@ -18,6 +19,7 @@ CREATE TABLE family_post_photos (
   entry_photo_id UUID REFERENCES entry_photos(id) ON DELETE CASCADE,
   display_order INTEGER DEFAULT 0
 );
+grant select, insert, update, delete on public.family_post_photos to anon, authenticated, service_role;
 
 ALTER TABLE family_post_photos DISABLE ROW LEVEL SECURITY;
 

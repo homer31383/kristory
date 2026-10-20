@@ -21,6 +21,7 @@ create table if not exists babylist_extension_tokens (
   created_at  timestamptz default now(),
   used_at     timestamptz
 );
+grant select, insert, update, delete on public.babylist_extension_tokens to anon, authenticated, service_role;
 
 -- All babylist_* tables run with RLS disabled — the app has no Supabase Auth
 -- and trusts the client. A plain `create table` already leaves RLS off, but

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS journal_entries (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.journal_entries to anon, authenticated, service_role;
 
 -- Entry Sections (one per user per day)
 CREATE TABLE IF NOT EXISTS entry_sections (
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS entry_sections (
   updated_at timestamptz DEFAULT now(),
   UNIQUE (entry_id, user_id)
 );
+grant select, insert, update, delete on public.entry_sections to anon, authenticated, service_role;
 
 -- Full-text search on entry sections
 ALTER TABLE entry_sections ADD COLUMN IF NOT EXISTS fts tsvector
@@ -36,6 +38,7 @@ CREATE TABLE IF NOT EXISTS entry_photos (
   display_order integer DEFAULT 0,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.entry_photos to anon, authenticated, service_role;
 
 -- Categories (may already exist in your project)
 -- Add missing columns if the table exists, or create it fresh
@@ -62,6 +65,7 @@ BEGIN
     END IF;
   END IF;
 END $$;
+grant select, insert, update, delete on public.categories to anon, authenticated, service_role;
 
 -- Seed default categories (skip if they already exist)
 INSERT INTO categories (name, emoji, is_default) VALUES
@@ -90,6 +94,7 @@ CREATE TABLE IF NOT EXISTS tagged_items (
   location_place_id text,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.tagged_items to anon, authenticated, service_role;
 
 CREATE INDEX IF NOT EXISTS idx_tagged_items_name ON tagged_items USING GIN (to_tsvector('english', name));
 
@@ -103,6 +108,7 @@ CREATE TABLE IF NOT EXISTS trips (
   end_date date NOT NULL,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.trips to anon, authenticated, service_role;
 
 -- Trip <-> Entry junction table
 CREATE TABLE IF NOT EXISTS trip_entries (
@@ -110,6 +116,7 @@ CREATE TABLE IF NOT EXISTS trip_entries (
   entry_id uuid NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
   PRIMARY KEY (trip_id, entry_id)
 );
+grant select, insert, update, delete on public.trip_entries to anon, authenticated, service_role;
 
 -- Create storage bucket for photos (skip if exists)
 INSERT INTO storage.buckets (id, name, public) VALUES ('kristory-photos', 'kristory-photos', true)

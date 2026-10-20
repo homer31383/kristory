@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS tagged_item_participants (
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   PRIMARY KEY (tagged_item_id, user_id)
 );
+grant select, insert, update, delete on public.tagged_item_participants to anon, authenticated, service_role;
 ALTER TABLE tagged_item_participants DISABLE ROW LEVEL SECURITY;
 
 -- Backfill item_date from linked journal entries where possible

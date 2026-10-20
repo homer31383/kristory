@@ -23,6 +23,7 @@ create table if not exists journal_media (
   sort_order integer default 0,
   created_at timestamptz default now()
 );
+grant select, insert, update, delete on public.journal_media to anon, authenticated, service_role;
 
 create index if not exists journal_media_entry_id_idx on journal_media(entry_id);
 

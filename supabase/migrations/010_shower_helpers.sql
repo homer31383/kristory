@@ -4,4 +4,5 @@ CREATE TABLE baby_shower_helpers (
   role TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_shower_helpers to anon, authenticated, service_role;
 ALTER TABLE baby_shower_helpers DISABLE ROW LEVEL SECURITY;

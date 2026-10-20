@@ -32,6 +32,7 @@ create table if not exists babylist_item_states (
       (catalog_item_id is null and custom_item_id is not null)
     )
 );
+grant select, insert, update, delete on public.babylist_item_states to anon, authenticated, service_role;
 
 create unique index if not exists uq_item_states_catalog
   on babylist_item_states (registry_id, catalog_item_id)

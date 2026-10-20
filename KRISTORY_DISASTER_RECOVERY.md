@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL
 );
+grant select, insert, update, delete on public.users to anon, authenticated, service_role;
 
 INSERT INTO users (name) VALUES ('Chris'), ('Krista');
 ```
@@ -51,6 +52,7 @@ CREATE TABLE IF NOT EXISTS journal_entries (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.journal_entries to anon, authenticated, service_role;
 
 -- Entry Sections (one per user per day)
 CREATE TABLE IF NOT EXISTS entry_sections (
@@ -62,6 +64,7 @@ CREATE TABLE IF NOT EXISTS entry_sections (
   updated_at timestamptz DEFAULT now(),
   UNIQUE (entry_id, user_id)
 );
+grant select, insert, update, delete on public.entry_sections to anon, authenticated, service_role;
 
 -- Full-text search
 ALTER TABLE entry_sections ADD COLUMN IF NOT EXISTS fts tsvector
@@ -77,6 +80,7 @@ CREATE TABLE IF NOT EXISTS entry_photos (
   display_order integer DEFAULT 0,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.entry_photos to anon, authenticated, service_role;
 
 -- Categories
 CREATE TABLE IF NOT EXISTS categories (
@@ -86,6 +90,7 @@ CREATE TABLE IF NOT EXISTS categories (
   is_default boolean DEFAULT false,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.categories to anon, authenticated, service_role;
 
 -- Seed default categories
 INSERT INTO categories (name, emoji, is_default) VALUES
@@ -118,6 +123,7 @@ CREATE TABLE IF NOT EXISTS tagged_items (
   item_date date,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.tagged_items to anon, authenticated, service_role;
 
 CREATE INDEX IF NOT EXISTS idx_tagged_items_name ON tagged_items USING GIN (to_tsvector('english', name));
 
@@ -131,6 +137,7 @@ CREATE TABLE IF NOT EXISTS trips (
   end_date date NOT NULL,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.trips to anon, authenticated, service_role;
 
 -- Trip <-> Entry junction
 CREATE TABLE IF NOT EXISTS trip_entries (
@@ -138,6 +145,7 @@ CREATE TABLE IF NOT EXISTS trip_entries (
   entry_id uuid NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
   PRIMARY KEY (trip_id, entry_id)
 );
+grant select, insert, update, delete on public.trip_entries to anon, authenticated, service_role;
 
 -- Recipe tags
 CREATE TABLE IF NOT EXISTS recipe_tags (
@@ -146,6 +154,7 @@ CREATE TABLE IF NOT EXISTS recipe_tags (
   emoji text,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.recipe_tags to anon, authenticated, service_role;
 
 -- Recipe tag junction
 CREATE TABLE IF NOT EXISTS tagged_item_recipe_tags (
@@ -153,6 +162,7 @@ CREATE TABLE IF NOT EXISTS tagged_item_recipe_tags (
   recipe_tag_id uuid REFERENCES recipe_tags(id) ON DELETE CASCADE,
   PRIMARY KEY (tagged_item_id, recipe_tag_id)
 );
+grant select, insert, update, delete on public.tagged_item_recipe_tags to anon, authenticated, service_role;
 
 -- Seed recipe tags
 INSERT INTO recipe_tags (name, emoji) VALUES
@@ -167,6 +177,7 @@ CREATE TABLE IF NOT EXISTS tagged_item_participants (
   user_id uuid REFERENCES users(id) ON DELETE CASCADE,
   PRIMARY KEY (tagged_item_id, user_id)
 );
+grant select, insert, update, delete on public.tagged_item_participants to anon, authenticated, service_role;
 
 -- Baby Profile
 CREATE TABLE IF NOT EXISTS baby_profile (
@@ -180,6 +191,7 @@ CREATE TABLE IF NOT EXISTS baby_profile (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_profile to anon, authenticated, service_role;
 
 -- Insert one default row
 INSERT INTO baby_profile (name) VALUES (null);
@@ -195,6 +207,7 @@ CREATE TABLE IF NOT EXISTS baby_milestones (
   photo_path text,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_milestones to anon, authenticated, service_role;
 
 -- Storage bucket
 INSERT INTO storage.buckets (id, name, public) VALUES ('kristory-photos', 'kristory-photos', true)

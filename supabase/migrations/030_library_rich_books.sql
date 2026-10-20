@@ -39,6 +39,7 @@ create table if not exists media_tags (
   category_type text not null default 'books',
   created_at timestamptz default now()
 );
+grant select, insert, update, delete on public.media_tags to anon, authenticated, service_role;
 alter table media_tags disable row level security;
 
 create table if not exists tagged_item_media_tags (
@@ -46,6 +47,7 @@ create table if not exists tagged_item_media_tags (
   media_tag_id uuid references media_tags(id) on delete cascade,
   primary key (tagged_item_id, media_tag_id)
 );
+grant select, insert, update, delete on public.tagged_item_media_tags to anon, authenticated, service_role;
 alter table tagged_item_media_tags disable row level security;
 
 insert into media_tags (name, category_type) values

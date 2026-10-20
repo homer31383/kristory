@@ -134,6 +134,15 @@ All migrations through `032` are applied in production (probed 2026-10-17).
 | `baby_shower_tasks` / `_schedule` / `_helpers` / `_menu` / `_photos` | Shower prep checklist, day-of schedule, helpers, menu, guest-uploaded photos (009–010, 012, 016–017) |
 | `babylist_item_states` / `_catalog_tier_overrides` / `_section_states` / `_extension_tokens` | Registry overlay tables added by this repo (019–022, 028). Core `babylist_*` tables come from the extension repo |
 
+### Table grants (required since Supabase change, Oct 30 2026)
+
+- Every new table in `public` must be granted explicitly in the same SQL that creates it, whether it's a migration file or run in the dashboard SQL editor:
+  `grant select, insert, update, delete on public.<table> to anon, authenticated, service_role;`
+- Anon needs full CRUD because this app uses the anon key with RLS disabled. Do not copy Supabase's default example, which gives anon select only and will break writes.
+- If supabase-js returns "permission denied" on a table with RLS off, check for a missing grant first, before assuming it's an RLS problem.
+- To list public tables that are missing anon write access:
+  `select table_name from information_schema.tables t where table_schema = 'public' and table_type = 'BASE TABLE' and not exists (select 1 from information_schema.role_table_grants g where g.table_schema = 'public' and g.table_name = t.table_name and g.grantee = 'anon' and g.privilege_type = 'INSERT');`
+
 ## Key Routes
 
 | Route | View | Notes |

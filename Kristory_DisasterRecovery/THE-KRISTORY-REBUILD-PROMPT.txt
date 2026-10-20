@@ -23,6 +23,7 @@ PREREQUISITES:
      name TEXT NOT NULL,
      created_at TIMESTAMPTZ DEFAULT now()
    );
+   grant select, insert, update, delete on public.users to anon, authenticated, service_role;
    INSERT INTO users (id, name) VALUES
      ('9df51388-65e8-44bf-bfad-65729744190b', 'Chris'),
      ('cab9d09c-0083-4ce1-aaf5-9a045d8a4315', 'Krista');
@@ -38,6 +39,7 @@ CREATE TABLE journal_entries (
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+grant select, insert, update, delete on public.journal_entries to anon, authenticated, service_role;
 ALTER TABLE journal_entries DISABLE ROW LEVEL SECURITY;
 
 -- ENTRY SECTIONS (one per user per day)
@@ -50,6 +52,7 @@ CREATE TABLE entry_sections (
   updated_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE (entry_id, user_id)
 );
+grant select, insert, update, delete on public.entry_sections to anon, authenticated, service_role;
 ALTER TABLE entry_sections DISABLE ROW LEVEL SECURITY;
 
 ALTER TABLE entry_sections ADD COLUMN fts TSVECTOR
@@ -65,6 +68,7 @@ CREATE TABLE entry_photos (
   display_order INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+grant select, insert, update, delete on public.entry_photos to anon, authenticated, service_role;
 ALTER TABLE entry_photos DISABLE ROW LEVEL SECURITY;
 
 -- CATEGORIES
@@ -76,6 +80,7 @@ CREATE TABLE categories (
   user_id UUID REFERENCES users(id) NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+grant select, insert, update, delete on public.categories to anon, authenticated, service_role;
 ALTER TABLE categories DISABLE ROW LEVEL SECURITY;
 
 -- Seed default categories (using Chris's user_id)
@@ -108,6 +113,7 @@ CREATE TABLE tagged_items (
   item_date DATE,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+grant select, insert, update, delete on public.tagged_items to anon, authenticated, service_role;
 ALTER TABLE tagged_items DISABLE ROW LEVEL SECURITY;
 
 CREATE INDEX idx_tagged_items_name ON tagged_items USING GIN (to_tsvector('english', name));
@@ -119,6 +125,7 @@ CREATE TABLE recipe_tags (
   emoji TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+grant select, insert, update, delete on public.recipe_tags to anon, authenticated, service_role;
 ALTER TABLE recipe_tags DISABLE ROW LEVEL SECURITY;
 
 INSERT INTO recipe_tags (name, emoji) VALUES
@@ -133,6 +140,7 @@ CREATE TABLE tagged_item_recipe_tags (
   recipe_tag_id UUID REFERENCES recipe_tags(id) ON DELETE CASCADE,
   PRIMARY KEY (tagged_item_id, recipe_tag_id)
 );
+grant select, insert, update, delete on public.tagged_item_recipe_tags to anon, authenticated, service_role;
 ALTER TABLE tagged_item_recipe_tags DISABLE ROW LEVEL SECURITY;
 
 -- PARTICIPANTS (who watched/read/visited)
@@ -141,6 +149,7 @@ CREATE TABLE tagged_item_participants (
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   PRIMARY KEY (tagged_item_id, user_id)
 );
+grant select, insert, update, delete on public.tagged_item_participants to anon, authenticated, service_role;
 ALTER TABLE tagged_item_participants DISABLE ROW LEVEL SECURITY;
 
 -- TRIPS
@@ -153,6 +162,7 @@ CREATE TABLE trips (
   end_date DATE NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+grant select, insert, update, delete on public.trips to anon, authenticated, service_role;
 ALTER TABLE trips DISABLE ROW LEVEL SECURITY;
 
 CREATE TABLE trip_entries (
@@ -160,6 +170,7 @@ CREATE TABLE trip_entries (
   entry_id UUID REFERENCES journal_entries(id) ON DELETE CASCADE,
   PRIMARY KEY (trip_id, entry_id)
 );
+grant select, insert, update, delete on public.trip_entries to anon, authenticated, service_role;
 ALTER TABLE trip_entries DISABLE ROW LEVEL SECURITY;
 
 -- BABY
@@ -173,6 +184,7 @@ CREATE TABLE baby_milestones (
   photo_path TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_milestones to anon, authenticated, service_role;
 ALTER TABLE baby_milestones DISABLE ROW LEVEL SECURITY;
 
 CREATE TABLE baby_profile (
@@ -186,6 +198,7 @@ CREATE TABLE baby_profile (
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_profile to anon, authenticated, service_role;
 ALTER TABLE baby_profile DISABLE ROW LEVEL SECURITY;
 
 INSERT INTO baby_profile (name, due_date) VALUES ('Baby', '2026-10-02');

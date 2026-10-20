@@ -24,6 +24,7 @@ create table if not exists babylist_section_states (
   constraint uq_section_states_per_registry
     unique (registry_id, section)
 );
+grant select, insert, update, delete on public.babylist_section_states to anon, authenticated, service_role;
 
 create index if not exists idx_section_states_registry
   on babylist_section_states (registry_id);

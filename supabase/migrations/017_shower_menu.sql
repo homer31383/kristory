@@ -8,4 +8,5 @@ CREATE TABLE baby_shower_menu (
   display_order INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_shower_menu to anon, authenticated, service_role;
 ALTER TABLE baby_shower_menu DISABLE ROW LEVEL SECURITY;

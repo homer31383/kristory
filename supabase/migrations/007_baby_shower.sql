@@ -10,6 +10,7 @@ CREATE TABLE baby_shower_event (
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_shower_event to anon, authenticated, service_role;
 
 ALTER TABLE baby_shower_event DISABLE ROW LEVEL SECURITY;
 
@@ -36,5 +37,6 @@ CREATE TABLE baby_shower_guests (
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_shower_guests to anon, authenticated, service_role;
 
 ALTER TABLE baby_shower_guests DISABLE ROW LEVEL SECURITY;

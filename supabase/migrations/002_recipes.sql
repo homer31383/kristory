@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS recipe_tags (
   emoji TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+grant select, insert, update, delete on public.recipe_tags to anon, authenticated, service_role;
 
 ALTER TABLE recipe_tags DISABLE ROW LEVEL SECURITY;
 
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS tagged_item_recipe_tags (
   recipe_tag_id UUID REFERENCES recipe_tags(id) ON DELETE CASCADE,
   PRIMARY KEY (tagged_item_id, recipe_tag_id)
 );
+grant select, insert, update, delete on public.tagged_item_recipe_tags to anon, authenticated, service_role;
 
 ALTER TABLE tagged_item_recipe_tags DISABLE ROW LEVEL SECURITY;
 

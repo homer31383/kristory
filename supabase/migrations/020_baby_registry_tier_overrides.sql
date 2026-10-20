@@ -31,6 +31,7 @@ create table if not exists babylist_catalog_tier_overrides (
   constraint uq_tier_override_per_registry
     unique (registry_id, catalog_tier_id)
 );
+grant select, insert, update, delete on public.babylist_catalog_tier_overrides to anon, authenticated, service_role;
 
 create index if not exists idx_tier_override_registry
   on babylist_catalog_tier_overrides (registry_id);
