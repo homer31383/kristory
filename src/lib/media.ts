@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { supabase, getAccessToken } from './supabase'
 import type { JournalMedia, MediaFileType } from '../types'
 
 export const MEDIA_BUCKET = 'kristory-media'
@@ -188,7 +188,7 @@ export function generateVideoThumbnail(file: File): Promise<Blob | null> {
  * uploads don't expose progress, so this talks to the Storage REST endpoint
  * directly with XHR.
  */
-export function uploadMediaObject(
+export async function uploadMediaObject(
   path: string,
   body: Blob,
   contentType: string,
@@ -196,10 +196,14 @@ export function uploadMediaObject(
 ): Promise<void> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+  // Storage checks the bucket policies against the signed-in user, so send
+  // the session's access token; the anon key only goes as `apikey`.
+  const accessToken = await getAccessToken()
+  if (!accessToken) throw new Error('Upload failed: you are signed out. Sign in and try again.')
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${supabaseUrl}/storage/v1/object/${MEDIA_BUCKET}/${path}`)
-    xhr.setRequestHeader('Authorization', `Bearer ${anonKey}`)
+    xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`)
     xhr.setRequestHeader('apikey', anonKey)
     xhr.setRequestHeader('Content-Type', contentType)
     xhr.setRequestHeader('x-upsert', 'false')

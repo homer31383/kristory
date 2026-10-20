@@ -1,8 +1,10 @@
 # The Kristory
 
 A shared daily journal PWA for Chris and Krista. Both users write their own section for each day, attach photos, audio and video, tag items across categories, keep a book/media Library, track recipes, organize trips, record baby milestones, and plan a shared baby registry. The app also exposes:
-- a separate read-only family-facing baby feed at `/family` called **"The Babory"**, behind a PIN;
-- a public baby-shower site at `/shower` (and a manager at `/shower/m`), also served on its own custom domain.
+- a separate baby feed at `/family` called **"The Babory"** (household sign-in required since the 2026-10-20 lockdown);
+- a baby-shower site at `/shower` (and a manager at `/shower/m`, sign-in required), also served on its own custom domain.
+
+**Household lockdown (branch `household-lockdown`, 2026-10-20).** The app signs in with Supabase Auth (email + password, Chris and Krista only, sign-ups disabled). The PIN gates and the user picker are gone. `supabase/lockdown/2026-10-20_kristory.sql` (written, applied by hand) turns RLS on for every Kristory-owned table with a single `public.is_household()` policy, revokes anon, and makes both buckets household-only for listing and writes (public object URLs still work). Rollback: `2026-10-20_kristory_rollback.sql`.
 
 **`STATE-SNAPSHOT.md`** (2026-10-17) is the code-verified reference for the full schema, every route, features, storage, and backup gaps. Keep it in sync when you change any of those.
 
@@ -10,7 +12,7 @@ A shared daily journal PWA for Chris and Krista. Both users write their own sect
 
 - **Framework**: Vite + React 19 + TypeScript 5.9
 - **Styling**: Tailwind CSS v4 (`@tailwindcss/vite` plugin) + CSS custom properties for theming
-- **Backend**: Supabase (PostgreSQL + Storage, no auth)
+- **Backend**: Supabase (PostgreSQL + Storage + Auth email/password)
 - **Data**: TanStack React Query v5 (`useQuery`, `useMutation`, `useInfiniteQuery`)
 - **Routing**: React Router v6 with nested layout routes
 - **Rich text**: Tiptap (starter-kit + placeholder)
@@ -56,11 +58,11 @@ These rules have caused real bugs in the past. Follow them.
 
 12. **API functions use a named `export async function POST(req: Request)`**, never `export default`. The default export is the legacy `(req, res)` signature and Vercel ignores the returned `Response`. Each function also needs a `maxDuration` entry in `vercel.json`. `ANTHROPIC_API_KEY` is server-side only.
 
-13. **Create tables with SQL, not the Supabase Table Editor.** The Table Editor auto-enables RLS, which silently breaks anon writes. Every table must have RLS disabled.
+13. **Create tables with SQL, not the Supabase Table Editor.** After the household lockdown, a new Kristory table needs RLS enabled with the single policy `household_only ... for all to authenticated using (public.is_household()) with check (public.is_household())`, no anon grant, and `grant select, insert, update, delete ... to authenticated, service_role`.
 
 14. **Tables subscribed to realtime need `REPLICA IDENTITY FULL`.** Without it, filtered DELETE events are dropped (see migration 021). Also don't use partial unique indexes as upsert targets.
 
-15. **The agent can't run SQL.** It only has the anon key (PostgREST). The user runs every migration in the Supabase SQL Editor. Ship code that depends on a new column only after the user confirms the migration ran. To check, probe `GET /rest/v1/<table>?select=<col>&limit=1`: 200 means the column exists, 400 means it doesn't.
+15. **The agent can't run SQL.** It only has the anon key (PostgREST); after the lockdown anon can't read Kristory tables at all, so column probes need a signed-in token. The user runs every migration in the Supabase SQL Editor. Ship code that depends on a new column only after the user confirms the migration ran. To check, probe `GET /rest/v1/<table>?select=<col>&limit=1`: 200 means the column exists, 400 means it doesn't.
 
 ## User IDs (Hardcoded References)
 
@@ -69,7 +71,7 @@ These UUIDs are referenced throughout production data — never regenerate them:
 - **Chris**: `9df51388-65e8-44bf-bfad-65729744190b`
 - **Krista**: `cab9d09c-0083-4ce1-aaf5-9a045d8a4315`
 
-The `users` table was set up manually in Supabase; `033_hand_made_tables.sql` recreates it for a rebuild. The `USERS` constant in `src/lib/constants.ts` has empty `id` strings; the actual UUIDs are fetched at runtime from the `users` table by the `UserPicker` view.
+The `users` table was set up manually in Supabase; `033_hand_made_tables.sql` recreates it for a rebuild. The `USERS` constant in `src/lib/constants.ts` has empty `id` strings. At sign-in, `src/hooks/useUser.tsx` matches the Auth account's `user_metadata.name` ("Chris" / "Krista") to a `users` row by name; that row's id (not the Auth user id) is what every `user_id` column references.
 
 ## Design System
 
@@ -98,7 +100,7 @@ CSS custom properties defined in `src/index.css` under `:root` (light) and `html
 
 ## Database Tables
 
-All tables have RLS **disabled**; the app is private and trusts the client. The schema lives in `supabase/migrations/001`–`032`. The full column-level schema is in `STATE-SNAPSHOT.md` §2.
+Before the lockdown SQL runs, all tables have RLS **disabled**. After it, every Kristory-owned table has RLS on with one household policy (the list is in the lockdown file); `users`, `categories`, the core `babylist_*` tables, `babylist_extension_tokens` and the Axiom tables are owned elsewhere and not locked by it. The schema lives in `supabase/migrations/001`–`032`. The full column-level schema is in `STATE-SNAPSHOT.md` §2.
 
 **Not created by any migration here:**
 - `users`, `baby_profile`, `baby_milestones`: created manually in Supabase. `033_hand_made_tables.sql` recreates them idempotently (with grants) for a fresh rebuild.
@@ -136,9 +138,9 @@ All migrations through `032` are applied in production (probed 2026-10-17).
 
 ### Table grants (required since Supabase change, Oct 30 2026)
 
-- Every new table in `public` must be granted explicitly in the same SQL that creates it, whether it's a migration file or run in the dashboard SQL editor:
-  `grant select, insert, update, delete on public.<table> to anon, authenticated, service_role;`
-- Anon needs full CRUD because this app uses the anon key with RLS disabled. Do not copy Supabase's default example, which gives anon select only and will break writes.
+- Every new table in `public` must be granted explicitly in the same SQL that creates it, whether it's a migration file or run in the dashboard SQL editor. Since the household lockdown:
+  `grant select, insert, update, delete on public.<table> to authenticated, service_role;` (no anon), plus RLS and the `household_only` policy.
+- Migrations 001-033 still grant anon; the lockdown SQL revokes it.
 - If supabase-js returns "permission denied" on a table with RLS off, check for a missing grant first, before assuming it's an RLS problem.
 - To list public tables that are missing anon write access:
   `select table_name from information_schema.tables t where table_schema = 'public' and table_type = 'BASE TABLE' and not exists (select 1 from information_schema.role_table_grants g where g.table_schema = 'public' and g.table_name = t.table_name and g.grantee = 'anon' and g.privilege_type = 'INSERT');`
@@ -147,13 +149,13 @@ All migrations through `032` are applied in production (probed 2026-10-17).
 
 | Route | View | Notes |
 |---|---|---|
-| `/` | `UserPicker` | Wrapped in `AppPinLock` |
+| `/` | redirect to `/journal` | Sign-in screen when signed out (`RequireAuth`) |
 | `/journal` | `Journal` | Timeline, infinite scroll, baby widget, family feed link |
 | `/journal/:date` | `EntryDetail` | Editor with photos, tagged items, trip, milestone, family share |
-| `/photos` | `PhotoMemories` | Shuffled gallery of all entry photos (PIN + user, no Layout) |
+| `/photos` | `PhotoMemories` | Shuffled gallery of all entry photos (sign-in, no Layout) |
 | `/explore` | `Explore` | "The Library": search, Hall of Fame, Currently Reading, category cards (`/library` redirects here) |
 | `/library/books`, `/library/books/:bookId` | `Books`, `BookDetail` | Rich books list/detail, AI summary/themes, bookshelf scan |
-| `/library/river`, `/library/:categoryId/river` | `LibraryRiver` | Cover collage (PIN + user, no Layout) |
+| `/library/river`, `/library/:categoryId/river` | `LibraryRiver` | Cover collage (sign-in, no Layout) |
 | `/lists` | `Lists` | Trips, Baby, category grid, suggested trips |
 | `/lists/:catId` | `CategoryDetail` | Items in a category with filters |
 | `/book-of-food` | `BookOfFood` | Recipe browser |
@@ -165,12 +167,12 @@ All migrations through `032` are applied in production (probed 2026-10-17).
 | `/baby` | `Baby` | Timeline / Milestones / Firsts / Names tabs, family share card |
 | `/registry` | `Registry` | Shared baby registry (Chris & Krista only, realtime) |
 | `/settings` | `Settings` | All settings + Backup & Restore |
-| `/family` | `FamilyFeed` | **Separate PIN gate, "The Babory"** branding, no Kristory chrome |
-| `/family/photos` | `FamilyPhotos` | Babory photo gallery (requires family PIN flag) |
-| `/shower` | `BabyShower` | Public shower page: RSVP, photo upload, calendar |
-| `/shower/m` | `ShowerManage` | Shower manager (gated by the **family** PIN) |
+| `/family` | `FamilyFeed` | **"The Babory"** branding, no Kristory chrome; household sign-in |
+| `/family/photos` | `FamilyPhotos` | Babory photo gallery; household sign-in |
+| `/shower` | `BabyShower` | Shower page: RSVP, photo upload, calendar. No sign-in gate, but after the lockdown SQL anon can't read or write the shower tables or upload photos |
+| `/shower/m` | `ShowerManage` | Shower manager; household sign-in |
 
-`/family`, `/family/photos`, `/shower` and `/shower/m` are **NOT** wrapped in `AppPinLock` or `RequireUser`. The family routes have their own PIN gate (`baby_profile.family_pin`, localStorage `kristory-family-pin-ok`) and never query journal entries directly. `/shower/m` reuses that same PIN and flag.
+Every route except `/shower` is wrapped in `RequireAuth` (`src/components/RequireAuth.tsx`), which shows the sign-in screen (titled "The Babory" / "Shower Manager" on those routes) until a household member is signed in. Sign out is in Settings > Account; it removes all realtime channels and clears the React Query cache. The family routes still never query journal entries directly. `baby_profile.family_pin` still exists in the database but nothing reads it.
 
 **Custom domain:** on any hostname ending in `leahybernierbabyshower.com`, `App.tsx` serves only `/shower` and `/shower/m`; every other path redirects to `/shower`.
 
@@ -206,11 +208,13 @@ The bucket's storage policies are not in any migration.
 
 All use `claude-sonnet-5`, need `ANTHROPIC_API_KEY`, and have `maxDuration` 60/60/60/30 respectively.
 
+Every function starts with `verifyHousehold(req)` from `api/_lib/household.ts` (import it as `./_lib/household.js`). It reads `Authorization: Bearer <access token>`, validates it at `/auth/v1/user`, then looks the user up in `household_members` with `SUPABASE_SERVICE_ROLE_KEY`. It uses plain fetch, not supabase-js (2.98 would send a key as Bearer), so an `sb_secret_...` key only ever goes in the `apikey` header; legacy JWT keys also get a Bearer header. Needs `SUPABASE_URL` (or `VITE_SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY` on Vercel. Browser callers build headers with `apiHeaders()` from `src/lib/supabase.ts`.
+
 ### Registry
 `/registry` (`src/registry/`) uses a single hard-coded `REGISTRY_ID`. Identity is resolved through `babylist_people.kristory_user_id`. Live sync uses the realtime channel `registry:{id}` plus a presence channel. The Chrome extension pairs through `babylist_extension_tokens`.
 
 ### Audio & Video
-Clips go to the public `kristory-media` bucket as `{entry_id}/{uuid}.{ext}` (50MB cap), with video posters at `{entry_id}/{uuid}-thumb.jpg`. Uploads use XHR in `src/lib/media.ts` for progress. Players live in `src/components/media/`; use `preload="none"` on the family feed. Deleting a journal entry must call `deleteEntryMediaFiles(entryId)` first: the rows cascade but bucket files don't.
+Clips go to the public `kristory-media` bucket as `{entry_id}/{uuid}.{ext}` (50MB cap), with video posters at `{entry_id}/{uuid}-thumb.jpg`. Uploads use XHR in `src/lib/media.ts` for progress, sending the session access token as `Authorization` and the anon key as `apikey`. Players live in `src/components/media/`; use `preload="none"` on the family feed. Deleting a journal entry must call `deleteEntryMediaFiles(entryId)` first: the rows cascade but bucket files don't.
 
 ### Family Feed Separation
 The `/family` route uses a completely separate page layout. It only ever queries `family_posts`, `family_post_photos`, `entry_photos`, `journal_media` (nested under the post's entry, filtered to `share_to_family`), `baby_profile`, `baby_milestones`, and `baby_name_suggestions` — never journal entries, tagged items, trips, etc.
@@ -219,7 +223,7 @@ The `/family` route uses a completely separate page layout. It only ever queries
 
 1. **`tsc --noEmit` vs `tsc -b`**: Local `tsc --noEmit` is more lenient. Vercel runs `tsc -b` (build mode) which catches unused variables/imports that `--noEmit` misses. Always run `npm run build` before deploying.
 
-2. **Storage bucket needs RLS policies**: The `kristory-photos` bucket must have public SELECT, INSERT, and DELETE policies. Setting the bucket "public" alone is not enough — Supabase still enforces object-level RLS.
+2. **Storage bucket policies**: Before the lockdown SQL, `kristory-photos` and `kristory-media` have public SELECT/INSERT/DELETE policies. After it, both buckets stay public (public URLs work for anyone), but listing, API downloads, insert, update and delete need a household session (`kristory household ...` policies).
 
 3. **Photo upload canvas math**: Use `Math.round(img.width * scale)` in `resizeImage()`. Other rounding causes off-by-one rendering glitches on some devices.
 
@@ -245,7 +249,7 @@ The `/family` route uses a completely separate page layout. It only ever queries
 
 14. **Milestone "Share with family?" prompt is broken.** `handleCompleteMilestone` in `Baby.tsx` never links an entry, so "Share" only navigates to today's entry and doesn't create a post.
 
-15. **PINs are client-side checks.** `app_settings.app_pin` and `baby_profile.family_pin` are plain text and readable with the anon key. The shower manager shares the family PIN.
+15. **PINs are gone.** The lockdown SQL deletes `app_settings.app_pin`. `baby_profile.family_pin` remains as an unused column.
 
 ## Source Control & Deployment
 

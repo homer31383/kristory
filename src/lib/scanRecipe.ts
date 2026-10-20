@@ -1,3 +1,4 @@
+import { apiHeaders } from './supabase'
 import type { RecipePrefill } from '../components/AddRecipeSheet'
 
 /**
@@ -104,7 +105,7 @@ export async function scanRecipe(images: ScanImageInput[]): Promise<ScannedRecip
     try {
       res = await fetch('/api/scan-recipe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await apiHeaders(),
         body,
         signal: controller.signal,
       })

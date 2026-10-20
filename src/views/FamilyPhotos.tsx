@@ -5,7 +5,6 @@ import { format, parse } from 'date-fns'
 import { supabase } from '../lib/supabase'
 import { getStorageUrl } from '../lib/helpers'
 
-const FAMILY_PIN_KEY = 'kristory-family-pin-ok'
 const PAGE_SIZE = 24
 
 interface FamilyPhoto {
@@ -58,13 +57,6 @@ function shuffle<T>(input: T[]): T[] {
 
 export default function FamilyPhotos() {
   const navigate = useNavigate()
-  const authed = localStorage.getItem(FAMILY_PIN_KEY) === 'true'
-
-  // Gate on the same Babory PIN — bounce to the feed (which shows the PIN form).
-  useEffect(() => {
-    if (!authed) navigate('/family', { replace: true })
-  }, [authed, navigate])
-
   const { data, isLoading } = useFamilyPhotos()
 
   // A nonce generated once per mount — combined with the data identity it
@@ -98,8 +90,6 @@ export default function FamilyPhotos() {
     observer.observe(el)
     return () => observer.disconnect()
   }, [shuffled.length])
-
-  if (!authed) return null
 
   const visible = shuffled.slice(0, visibleCount)
 

@@ -36,8 +36,6 @@ const MEDIA_PLAYER_VARS = {
   '--media-player-shadow': 'none',
 } as React.CSSProperties
 
-const STORAGE_KEY = 'kristory-family-pin-ok'
-
 // -- Queries --
 
 function useFeedProfile() {
@@ -189,114 +187,6 @@ function Chevron({ open }: { open: boolean }) {
     >
       <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
     </svg>
-  )
-}
-
-// -- PIN Gate --
-
-function PinGate({ profile, onSuccess }: { profile: BabyProfile; onSuccess: () => void }) {
-  const [pin, setPin] = useState('')
-  const [error, setError] = useState(false)
-  const [shake, setShake] = useState(false)
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (pin === profile.family_pin) {
-      localStorage.setItem(STORAGE_KEY, 'true')
-      onSuccess()
-    } else {
-      setError(true)
-      setShake(true)
-      setTimeout(() => setShake(false), 500)
-    }
-  }
-
-  return (
-    <div style={{
-      minHeight: '100vh',
-      backgroundColor: C.bg,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: 24,
-      fontFamily: "'Inter', sans-serif",
-    }}>
-      <div style={{ maxWidth: 360, width: '100%', textAlign: 'center' }}>
-        <h1 style={{
-          fontFamily: "'Playfair Display', serif",
-          fontWeight: 700,
-          fontSize: 32,
-          color: C.text,
-          margin: '0 0 6px 0',
-        }}>
-          The Babory
-        </h1>
-        <p style={{ color: C.secondary, fontSize: 15, margin: '0 0 4px 0' }}>
-          {profile.name || 'Baby'}
-        </p>
-        <p style={{ color: C.muted, fontSize: 13, marginBottom: 32 }}>
-          Family Updates
-        </p>
-
-        <form onSubmit={handleSubmit}>
-          <div style={{ animation: shake ? 'shake 0.4s ease-in-out' : undefined }}>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={pin}
-              onChange={(e) => { setPin(e.target.value); setError(false) }}
-              placeholder="Enter PIN"
-              autoFocus
-              style={{
-                width: '100%',
-                padding: '14px 16px',
-                fontSize: 18,
-                textAlign: 'center',
-                letterSpacing: 8,
-                border: `2px solid ${error ? C.error : C.border}`,
-                borderRadius: 12,
-                backgroundColor: C.inputBg,
-                color: C.text,
-                outline: 'none',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
-          {error && (
-            <p style={{ color: C.error, fontSize: 13, marginTop: 8 }}>
-              That's not right, try again
-            </p>
-          )}
-          <button
-            type="submit"
-            style={{
-              width: '100%',
-              marginTop: 16,
-              padding: '14px 24px',
-              fontSize: 15,
-              fontWeight: 600,
-              color: 'white',
-              backgroundColor: C.accent,
-              border: 'none',
-              borderRadius: 12,
-              cursor: 'pointer',
-            }}
-          >
-            Enter
-          </button>
-        </form>
-      </div>
-
-      <style>{`
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          20% { transform: translateX(-8px); }
-          40% { transform: translateX(8px); }
-          60% { transform: translateX(-6px); }
-          80% { transform: translateX(6px); }
-        }
-      `}</style>
-    </div>
   )
 }
 
@@ -1068,9 +958,6 @@ function FeedContent({ profile }: { profile: BabyProfile }) {
 
 export default function FamilyFeed() {
   const { data: profile, isLoading } = useFeedProfile()
-  const [authenticated, setAuthenticated] = useState(() =>
-    localStorage.getItem(STORAGE_KEY) === 'true'
-  )
 
   if (isLoading) {
     return (
@@ -1115,10 +1002,6 @@ export default function FamilyFeed() {
         </div>
       </div>
     )
-  }
-
-  if (!authenticated) {
-    return <PinGate profile={profile} onSuccess={() => setAuthenticated(true)} />
   }
 
   return <FeedContent profile={profile} />

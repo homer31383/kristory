@@ -1,11 +1,10 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { UserProvider, useUser } from './hooks/useUser'
 import { ThemeProvider } from './hooks/useTheme'
 import Layout from './components/Layout'
-import AppPinLock from './components/AppPinLock'
-import UserPicker from './views/UserPicker'
+import RequireAuth from './components/RequireAuth'
 import Journal from './views/Journal'
 import EntryDetail from './views/EntryDetail'
 import Explore from './views/Explore'
@@ -38,10 +37,15 @@ const queryClient = new QueryClient({
   },
 })
 
-function RequireUser({ children }: { children: React.ReactNode }) {
-  const { user } = useUser()
-  if (!user) return <Navigate to="/" replace />
-  return <>{children}</>
+// Drop every cached query when the account signs out, so the next person to
+// sign in on this device never sees the previous account's data.
+function ClearCacheOnSignOut() {
+  const { status } = useUser()
+  const queryClient = useQueryClient()
+  useEffect(() => {
+    if (status === 'signed-out') queryClient.clear()
+  }, [status, queryClient])
+  return null
 }
 
 function AppRoutes() {
@@ -51,7 +55,7 @@ function AppRoutes() {
     return (
       <Routes>
         <Route path="/shower" element={<BabyShower />} />
-        <Route path="/shower/m" element={<ShowerManage />} />
+        <Route path="/shower/m" element={<RequireAuth title="Shower Manager"><ShowerManage /></RequireAuth>} />
         <Route path="*" element={<Navigate to="/shower" replace />} />
       </Routes>
     )
@@ -59,48 +63,40 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/" element={<AppPinLock><UserPicker /></AppPinLock>} />
+      <Route path="/" element={<RequireAuth><Navigate to="/journal" replace /></RequireAuth>} />
       <Route
         path="/photos"
         element={
-          <AppPinLock>
-            <RequireUser>
-              <PhotoMemories />
-            </RequireUser>
-          </AppPinLock>
+          <RequireAuth>
+            <PhotoMemories />
+          </RequireAuth>
         }
       />
-      <Route path="/family" element={<FamilyFeed />} />
-      <Route path="/family/photos" element={<FamilyPhotos />} />
+      <Route path="/family" element={<RequireAuth title="The Babory"><FamilyFeed /></RequireAuth>} />
+      <Route path="/family/photos" element={<RequireAuth title="The Babory"><FamilyPhotos /></RequireAuth>} />
       <Route
         path="/library/river"
         element={
-          <AppPinLock>
-            <RequireUser>
-              <LibraryRiver />
-            </RequireUser>
-          </AppPinLock>
+          <RequireAuth>
+            <LibraryRiver />
+          </RequireAuth>
         }
       />
       <Route
         path="/library/:categoryId/river"
         element={
-          <AppPinLock>
-            <RequireUser>
-              <LibraryRiver />
-            </RequireUser>
-          </AppPinLock>
+          <RequireAuth>
+            <LibraryRiver />
+          </RequireAuth>
         }
       />
       <Route path="/shower" element={<BabyShower />} />
-      <Route path="/shower/m" element={<ShowerManage />} />
+      <Route path="/shower/m" element={<RequireAuth title="Shower Manager"><ShowerManage /></RequireAuth>} />
       <Route
         element={
-          <AppPinLock>
-            <RequireUser>
-              <Layout />
-            </RequireUser>
-          </AppPinLock>
+          <RequireAuth>
+            <Layout />
+          </RequireAuth>
         }
       >
         <Route path="/journal" element={<Journal />} />
@@ -127,7 +123,7 @@ function AppRoutes() {
 
 // URL quick actions: /?action=new-entry. The param is stripped right away so
 // a refresh does not re-trigger it. The action waits in sessionStorage through
-// the PIN screen and user picker; Journal and EntryDetail pick it up.
+// the sign-in screen; Journal and EntryDetail pick it up.
 function takeQuickAction() {
   const params = new URLSearchParams(window.location.search)
   const action = params.get('action')
@@ -145,6 +141,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <UserProvider>
+          <ClearCacheOnSignOut />
           <BrowserRouter>
             <AppRoutes />
           </BrowserRouter>

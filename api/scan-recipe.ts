@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { verifyHousehold } from './_lib/household.js'
 
 /**
  * Vercel serverless function: extracts a structured recipe from one or more
@@ -265,6 +266,10 @@ function classifyApiError(err: unknown): {
 }
 
 export async function POST(req: Request): Promise<Response> {
+  // Signed-in household members only (Supabase access token in Authorization).
+  const auth = await verifyHousehold(req)
+  if (!auth.ok) return auth.response
+
   const startedAt = Date.now()
   const apiKey = process.env.ANTHROPIC_API_KEY
   log('info', 'invoked', {

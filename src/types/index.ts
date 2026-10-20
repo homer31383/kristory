@@ -143,7 +143,6 @@ export interface BabyProfile {
   birth_weight: string | null
   birth_length: string | null
   notes: string | null
-  family_pin: string | null
   created_at: string
   updated_at: string
 }

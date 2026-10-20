@@ -6,8 +6,6 @@ import { useUser } from '../hooks/useUser'
 import { useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory } from '../hooks/useCategories'
 import { useTrips } from '../hooks/useTrips'
 import { useBabyProfile, useUpdateBabyProfile } from '../hooks/useBaby'
-import { useUpdateFamilyPin } from '../hooks/useFamilyFeed'
-import { useAppPin, useSetAppPin, useRemoveAppPin } from '../hooks/useAppPin'
 import { useBackupSettings, useUpdateBackupReminder } from '../hooks/useBackup'
 import { createFullBackup, estimateBackupSize, type BackupProgress } from '../lib/backup'
 import { exportJSON, exportPDF } from '../lib/export'
@@ -17,7 +15,7 @@ import type { ThemeMode, Category } from '../types'
 
 export default function Settings() {
   const navigate = useNavigate()
-  const { user } = useUser()
+  const { user, session, signOut } = useUser()
   const { theme, setTheme } = useTheme()
   const { data: categories = [] } = useCategories()
   const createCategory = useCreateCategory()
@@ -26,10 +24,6 @@ export default function Settings() {
   const { data: trips = [] } = useTrips()
   const { data: babyProfile } = useBabyProfile()
   const updateBabyProfile = useUpdateBabyProfile()
-  const updateFamilyPin = useUpdateFamilyPin()
-  const { data: currentAppPin } = useAppPin()
-  const setAppPin = useSetAppPin()
-  const removeAppPin = useRemoveAppPin()
   const { data: backupSettings } = useBackupSettings()
   const updateBackupReminder = useUpdateBackupReminder()
 
@@ -55,15 +49,7 @@ export default function Settings() {
   const [showBabyWidget, setShowBabyWidget] = useState(() => localStorage.getItem('kristory-baby-widget-hidden') !== 'true')
 
   // Family feed
-  const [editingPin, setEditingPin] = useState(false)
-  const [familyPin, setFamilyPin] = useState('')
   const [linkCopied, setLinkCopied] = useState(false)
-
-  // App PIN
-  const [editingAppPin, setEditingAppPin] = useState(false)
-  const [appPinInput, setAppPinInput] = useState('')
-  const [appPinConfirm, setAppPinConfirm] = useState('')
-  const [appPinError, setAppPinError] = useState('')
 
   // Backup
   const [backingUp, setBackingUp] = useState(false)
@@ -219,128 +205,30 @@ export default function Settings() {
         </div>
       </Section>
 
-      {/* App PIN */}
-      <Section title="App PIN">
-        {editingAppPin ? (
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>
-                {currentAppPin ? 'New PIN' : 'Set a PIN'}
-              </label>
-              <input
-                type="password"
-                inputMode="numeric"
-                value={appPinInput}
-                onChange={(e) => { setAppPinInput(e.target.value); setAppPinError('') }}
-                placeholder="Enter PIN"
-                autoFocus
-                className="w-full rounded-lg border p-2.5 text-sm"
-                style={{ backgroundColor: 'var(--input-bg)', borderColor: 'var(--border-card)', color: 'var(--text-primary)', letterSpacing: 4 }}
-              />
+      {/* Account */}
+      <Section title="Account">
+        <div
+          className="rounded-lg border p-3 flex items-center justify-between gap-3"
+          style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+        >
+          <div className="min-w-0">
+            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              Signed in as {user?.name ?? 'unknown'}
             </div>
-            <div>
-              <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>Confirm PIN</label>
-              <input
-                type="password"
-                inputMode="numeric"
-                value={appPinConfirm}
-                onChange={(e) => { setAppPinConfirm(e.target.value); setAppPinError('') }}
-                placeholder="Confirm PIN"
-                className="w-full rounded-lg border p-2.5 text-sm"
-                style={{ backgroundColor: 'var(--input-bg)', borderColor: 'var(--border-card)', color: 'var(--text-primary)', letterSpacing: 4 }}
-              />
-            </div>
-            {appPinError && (
-              <p className="text-xs" style={{ color: '#E5534B' }}>{appPinError}</p>
+            {session?.user?.email && (
+              <div className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
+                {session.user.email}
+              </div>
             )}
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => { setEditingAppPin(false); setAppPinInput(''); setAppPinConfirm(''); setAppPinError('') }}
-                className="px-4 py-2 rounded-lg text-sm font-medium cursor-pointer"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  if (!appPinInput.trim()) {
-                    setAppPinError('PIN cannot be empty')
-                    return
-                  }
-                  if (appPinInput !== appPinConfirm) {
-                    setAppPinError('PINs do not match')
-                    return
-                  }
-                  await setAppPin.mutateAsync(appPinInput.trim())
-                  setEditingAppPin(false)
-                  setAppPinInput('')
-                  setAppPinConfirm('')
-                }}
-                disabled={setAppPin.isPending}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-white cursor-pointer disabled:opacity-50"
-                style={{ backgroundColor: 'var(--accent)' }}
-              >
-                {setAppPin.isPending ? 'Saving...' : 'Save PIN'}
-              </button>
-            </div>
           </div>
-        ) : (
-          <div className="space-y-3">
-            <div
-              className="rounded-lg border p-3 flex items-center justify-between"
-              style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
-            >
-              <div>
-                <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                  {currentAppPin ? 'PIN is set' : 'No PIN set'}
-                </div>
-                <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                  {currentAppPin
-                    ? 'A PIN is required to open the app'
-                    : 'Anyone can open the app without a PIN'}
-                </div>
-              </div>
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center"
-                style={{ backgroundColor: currentAppPin ? '#F0FAF0' : 'var(--bg-page)' }}
-              >
-                {currentAppPin ? (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4A9D5A" strokeWidth="2">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                  </svg>
-                ) : (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                    <path d="M7 11V7a5 5 0 0 1 9.9-1" />
-                  </svg>
-                )}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setEditingAppPin(true)}
-                className="flex-1 py-2.5 rounded-lg text-sm font-medium border border-dashed cursor-pointer"
-                style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
-              >
-                {currentAppPin ? 'Change PIN' : 'Set PIN'}
-              </button>
-              {currentAppPin && (
-                <button
-                  onClick={async () => {
-                    if (!confirm('Remove the app PIN? Anyone will be able to open the app.')) return
-                    await removeAppPin.mutateAsync()
-                  }}
-                  disabled={removeAppPin.isPending}
-                  className="px-4 py-2.5 rounded-lg text-sm font-medium cursor-pointer disabled:opacity-50"
-                  style={{ color: '#E5534B' }}
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-          </div>
-        )}
+          <button
+            onClick={() => { void signOut() }}
+            className="px-4 py-2 rounded-lg text-sm font-medium border cursor-pointer shrink-0"
+            style={{ borderColor: 'var(--border-card)', color: '#E5534B' }}
+          >
+            Sign out
+          </button>
+        </div>
       </Section>
 
       {/* Categories */}
@@ -607,64 +495,6 @@ export default function Settings() {
       {babyProfile && (
         <Section title="Family Feed">
           <div className="space-y-3">
-            {/* PIN */}
-            <div
-              className="rounded-lg border p-3"
-              style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-medium mb-0.5" style={{ color: 'var(--text-muted)' }}>
-                    Family PIN
-                  </div>
-                  {editingPin ? (
-                    <div className="flex gap-2 mt-1">
-                      <input
-                        type="text"
-                        value={familyPin}
-                        onChange={(e) => setFamilyPin(e.target.value)}
-                        className="w-24 rounded-lg border p-1.5 text-sm text-center"
-                        style={{ backgroundColor: 'var(--input-bg)', borderColor: 'var(--border-card)', color: 'var(--text-primary)' }}
-                        autoFocus
-                      />
-                      <button
-                        onClick={async () => {
-                          if (familyPin.trim()) {
-                            await updateFamilyPin.mutateAsync({ id: babyProfile.id, family_pin: familyPin.trim() })
-                          }
-                          setEditingPin(false)
-                        }}
-                        className="px-3 py-1 rounded-lg text-xs font-medium text-white cursor-pointer"
-                        style={{ backgroundColor: 'var(--accent)' }}
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setEditingPin(false)}
-                        className="text-xs cursor-pointer"
-                        style={{ color: 'var(--text-muted)' }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="text-sm font-mono" style={{ color: 'var(--text-primary)' }}>
-                      {babyProfile.family_pin || '(not set)'}
-                    </div>
-                  )}
-                </div>
-                {!editingPin && (
-                  <button
-                    onClick={() => { setFamilyPin(babyProfile.family_pin ?? ''); setEditingPin(true) }}
-                    className="text-xs cursor-pointer"
-                    style={{ color: 'var(--accent)' }}
-                  >
-                    Edit
-                  </button>
-                )}
-              </div>
-            </div>
-
             {/* Share link */}
             <div
               className="rounded-lg border p-3"

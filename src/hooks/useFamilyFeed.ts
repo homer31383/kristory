@@ -155,24 +155,6 @@ export function useFamilyFeedProfile() {
   })
 }
 
-export function useUpdateFamilyPin() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: async (params: { id: string; family_pin: string }) => {
-      const { error } = await supabase
-        .from('baby_profile')
-        .update({ family_pin: params.family_pin, updated_at: new Date().toISOString() })
-        .eq('id', params.id)
-      if (error) throw error
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['baby-profile'] })
-      queryClient.invalidateQueries({ queryKey: ['family-feed-profile'] })
-    },
-  })
-}
-
 export function useFamilyPostIds() {
   return useQuery({
     queryKey: ['family-post-ids'],

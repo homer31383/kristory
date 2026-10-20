@@ -6,6 +6,11 @@
 
 No secrets, keys or PIN values appear in this file.
 
+> **Household lockdown, 2026-10-20 (branch `household-lockdown`).** Sections below are updated for it.
+> - Sign-in is Supabase Auth email + password (Chris and Krista; sign-ups disabled). `UserPicker`, `AppPinLock`, `useAppPin` and the Babory / shower-manager PIN gates are removed. `src/hooks/useUser.tsx` resolves the Kristory `users` row by matching the Auth account's `user_metadata.name`.
+> - `supabase/lockdown/2026-10-20_kristory.sql` (written, **not applied** at the time of writing) enables RLS with one `household_only` policy (`public.is_household()`) on 28 Kristory-owned tables, revokes anon, deletes `app_settings.app_pin`, and replaces the open storage policies on `kristory-photos` and `kristory-media` with household-only ones. Buckets stay public. Rollback: `2026-10-20_kristory_rollback.sql`.
+> - Every `api/` function verifies the caller (`api/_lib/household.ts`).
+
 ---
 
 ## 1. Routes (`src/App.tsx`)
@@ -17,7 +22,7 @@ No secrets, keys or PIN values appear in this file.
 | Path | View |
 |---|---|
 | `/shower` | `BabyShower` (public) |
-| `/shower/m` | `ShowerManage` (family-PIN gate) |
+| `/shower/m` | `ShowerManage` (household sign-in) |
 | `*` | `<Navigate to="/shower" replace>` |
 
 So on the shower domain the journal, `/family`, `/registry` and everything else redirect to `/shower`. The "Visit The Babory →" link on `/shower` is therefore dead on that domain.
@@ -26,41 +31,39 @@ Every other hostname gets the full route table below. `vercel.json` has no domai
 
 ### 1b. Main route table
 
-| Route | View | App PIN (`AppPinLock`) | `RequireUser` | Layout (nav chrome) |
-|---|---|---|---|---|
-| `/` | `UserPicker` | ✅ | — | — |
-| `/photos` | `PhotoMemories` | ✅ | ✅ | — |
-| `/library/river` | `LibraryRiver` | ✅ | ✅ | — |
-| `/library/:categoryId/river` | `LibraryRiver` | ✅ | ✅ | — |
-| `/family` | `FamilyFeed` ("The Babory") | ❌ own PIN | ❌ | — |
-| `/family/photos` | `FamilyPhotos` | ❌ own PIN flag | ❌ | — |
-| `/shower` | `BabyShower` | ❌ public | ❌ | — |
-| `/shower/m` | `ShowerManage` | ❌ family PIN | ❌ | — |
-| `/journal` | `Journal` | ✅ | ✅ | ✅ |
-| `/journal/:date` | `EntryDetail` | ✅ | ✅ | ✅ |
-| `/explore` | `Explore` (titled "The Library") | ✅ | ✅ | ✅ |
-| `/library` | → `/explore` redirect | ✅ | ✅ | ✅ |
-| `/library/books` | `Books` | ✅ | ✅ | ✅ |
-| `/library/books/:bookId` | `BookDetail` | ✅ | ✅ | ✅ |
-| `/lists` | `Lists` | ✅ | ✅ | ✅ |
-| `/lists/:categoryId` | `CategoryDetail` | ✅ | ✅ | ✅ |
-| `/book-of-food` | `BookOfFood` | ✅ | ✅ | ✅ |
-| `/recipes/:recipeId` | `RecipeDetail` | ✅ | ✅ | ✅ |
-| `/items/:itemId` | `ItemDetail` | ✅ | ✅ | ✅ |
-| `/on-this-day` | `OnThisDay` | ✅ | ✅ | ✅ |
-| `/trips/new` | `CreateTrip` | ✅ | ✅ | ✅ |
-| `/trips/:tripId` | `TripDetail` | ✅ | ✅ | ✅ |
-| `/baby` | `Baby` | ✅ | ✅ | ✅ |
-| `/registry` | `Registry` | ✅ | ✅ | ✅ |
-| `/settings` | `Settings` | ✅ | ✅ | ✅ |
+| Route | View | Sign-in (`RequireAuth`) | Layout (nav chrome) |
+|---|---|---|---|
+| `/` | redirect to `/journal` | ✅ | — |
+| `/photos` | `PhotoMemories` | ✅ | — |
+| `/library/river` | `LibraryRiver` | ✅ | — |
+| `/library/:categoryId/river` | `LibraryRiver` | ✅ | — |
+| `/family` | `FamilyFeed` ("The Babory") | ✅ | — |
+| `/family/photos` | `FamilyPhotos` | ✅ | — |
+| `/shower` | `BabyShower` | ❌ public (anon blocked by the lockdown SQL) | — |
+| `/shower/m` | `ShowerManage` | ✅ | — |
+| `/journal` | `Journal` | ✅ | ✅ |
+| `/journal/:date` | `EntryDetail` | ✅ | ✅ |
+| `/explore` | `Explore` (titled "The Library") | ✅ | ✅ |
+| `/library` | → `/explore` redirect | ✅ | ✅ |
+| `/library/books` | `Books` | ✅ | ✅ |
+| `/library/books/:bookId` | `BookDetail` | ✅ | ✅ |
+| `/lists` | `Lists` | ✅ | ✅ |
+| `/lists/:categoryId` | `CategoryDetail` | ✅ | ✅ |
+| `/book-of-food` | `BookOfFood` | ✅ | ✅ |
+| `/recipes/:recipeId` | `RecipeDetail` | ✅ | ✅ |
+| `/items/:itemId` | `ItemDetail` | ✅ | ✅ |
+| `/on-this-day` | `OnThisDay` | ✅ | ✅ |
+| `/trips/new` | `CreateTrip` | ✅ | ✅ |
+| `/trips/:tripId` | `TripDetail` | ✅ | ✅ |
+| `/baby` | `Baby` | ✅ | ✅ |
+| `/registry` | `Registry` | ✅ | ✅ |
+| `/settings` | `Settings` | ✅ | ✅ |
 
-`RequireUser` redirects to `/` when no user has been picked. The selected user lives only in React state (`useUser.tsx`), so a hard reload always returns to the picker.
+`RequireAuth` shows the sign-in screen until a household member is signed in and matched to a `users` row (it also calls `rpc('is_household')`). The session persists in localStorage (`kristory-auth`). Sign out is in Settings > Account; it calls `supabase.removeAllChannels()` and the React Query cache is cleared.
 
-**Unlock mechanics:**
-- **App PIN:** `app_settings.app_pin`. Unlock is stored per session in sessionStorage `kristory-pin-unlocked`.
-- **Family PIN:** `baby_profile.family_pin`, compared on the client. Unlock is stored in localStorage `kristory-family-pin-ok`. `/family`, `/family/photos` **and** `/shower/m` all share this key and this PIN.
+**Removed:** the app PIN (`app_settings.app_pin`, sessionStorage `kristory-pin-unlocked`) and the family PIN gate (`baby_profile.family_pin`, localStorage `kristory-family-pin-ok`). The `family_pin` column still exists but nothing reads it.
 
-**URL quick action:** `?action=new-entry` on any URL is removed from the address bar by `takeQuickAction()`. It is held in sessionStorage `kristory-quick-action` through the PIN and user picker, then opens today's entry in the editor.
+**URL quick action:** `?action=new-entry` on any URL is removed from the address bar by `takeQuickAction()`. It is held in sessionStorage `kristory-quick-action` through the sign-in screen, then opens today's entry in the editor.
 
 ---
 
@@ -241,7 +244,9 @@ All app tables run with **RLS disabled** (no Supabase Auth; the client is truste
 
 ## 3. Serverless functions (`api/`)
 
-All four are Vercel functions using the Web fetch signature (a named `export async function POST`, not `export default`). All use `@anthropic-ai/sdk` with model **`claude-sonnet-5`** (switched from Sonnet 4.6 in `df4c6c1`). None of them touch Supabase or Storage.
+All four are Vercel functions using the Web fetch signature (a named `export async function POST`, not `export default`). All use `@anthropic-ai/sdk` with model **`claude-sonnet-5`** (switched from Sonnet 4.6 in `df4c6c1`). None of them touch Kristory tables or Storage.
+
+**Caller check (lockdown):** each starts with `verifyHousehold(req)` from `api/_lib/household.ts`: `Authorization: Bearer <access token>` is validated at `/auth/v1/user`, then the user id is looked up in `household_members` with the service key. Plain fetch, not supabase-js, so an `sb_secret_...` key goes only in `apikey`. 401 without a valid session, 403 for non-members. Server env: `SUPABASE_URL` (or `VITE_SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY`. The browser adds the token through `apiHeaders()` in `src/lib/supabase.ts`.
 
 | File | What it does | `max_tokens` | `maxDuration` (file and `vercel.json`) | Env vars |
 |---|---|---|---|---|
@@ -327,14 +332,14 @@ Commit `49aab0b` (2026-05-21) first committed a lot of code that had been writte
 - **Tabs:** Timeline (milestones plus Baby-tagged entries, "Shared" badge) / Milestones / Firsts ("Book of Firsts") / ★ Names.
 - **Milestones:** preset Pregnancy (7) and First Year (10) checklists with progress bars; tap to complete with today's date. Edit date/notes, remove, custom milestones.
 - ★ **"Mark as incomplete"** on preset milestones (`cfd7370`, 05-26).
-- ★ **Family Feed share card:** PIN, then native share, SMS, email or copy (`49aab0b`, 05-21).
+- ★ **Family Feed share card:** native share, SMS, email or copy of the link (`49aab0b`, 05-21). The PIN was dropped in the lockdown; viewers must sign in.
 - ★ **Baby Shower manager link** (`49aab0b`).
 - ★ **"Share with family?" prompt** after completing a milestone (`49aab0b`). **Broken, see §7.**
 - ★ **Names tab:** view and delete family suggestions (`49aab0b`).
 
 ### Babory (`/family`, `/family/photos`)
 All ★ `49aab0b` (05-21) unless noted.
-- **Separate layout:** PIN gate with shake on error; "not set up" screen when there is no `baby_profile`; light theme forced.
+- **Separate layout:** household sign-in (was a PIN gate before the lockdown); "not set up" screen when there is no `baby_profile`; light theme forced.
 - **Header:** "The Babory" with the baby's age or due countdown. ★ Gallery icon (`fe40dfb`, 09-27).
 - **Updates tab:** year → month timeline keyed by entry date. Post cards show a milestone badge, caption preview and thumbnail. ★ "▶ N videos · ♪ N audio" label (`b866962`, 10-08).
 - **Post detail:**
@@ -354,7 +359,7 @@ All ★ `49aab0b` (05-21) unless noted.
   - **Share Your Photos:** ★ full-resolution guest uploads (`d8dc54e`), ★ drag & drop (`f51a5cf`, 08-01), ★ fullscreen viewer (`62075b2`, 08-01), ★ `#photos` anchor (`5ece417`, 08-01).
   - Background presentation: focal point, zoom, overlay, fill, tile, feather.
   - The public guest list was removed (`d8dc54e`).
-- **Manager** (family PIN):
+- **Manager** (household sign-in):
   - Stats strip; collapsible sections.
   - Event details editor; background settings with live preview.
   - "Send RSVP link" (type SEND; mailto/SMS; marks guests invited).
@@ -378,11 +383,11 @@ Everything here is ★ since `1ca0a38` (05-10). Single hard-coded `REGISTRY_ID`.
 
 ### Settings (`/settings`)
 - Appearance: Light / Dark / System.
-- ★ App PIN set/change/remove (`49aab0b`).
+- Account: signed-in name and email, Sign out (replaced App PIN in the lockdown).
 - Categories: edit and delete.
 - Trips list.
 - Baby profile and "show countdown" toggle.
-- ★ Family Feed: PIN, copy link, view (`49aab0b`).
+- ★ Family Feed: copy link, view (`49aab0b`).
 - Import Journal and Import Recipes.
 - Export Data as JSON or PDF. This is lossy, see §9.
 - App Updates: "Check for Updates".
@@ -472,15 +477,17 @@ Created in 001. URL builder: `getStorageUrl()` in `src/lib/helpers.ts`.
 
 `baby_milestones.photo_path` is only ever read; no code writes it.
 
-**Policies:** none are in any migration ⚠️. Public SELECT, INSERT and DELETE must exist on `storage.objects` for this bucket; making the bucket public is not enough. They are documented only as optional SQL in the REBUILD-GUIDE. There is no UPDATE policy; upserts work because the old object is deleted first.
+**Policies:** none are in any migration ⚠️. Before the lockdown, public SELECT, INSERT and DELETE exist on `storage.objects` for this bucket; their live names are unconfirmed (the REBUILD-GUIDE says "Public read/insert/delete", the old rebuild prompt says "Allow public uploads/reads/updates/deletes"). After the lockdown SQL: `kristory household photos select|insert|update|delete`, `to authenticated`, `bucket_id = 'kristory-photos' and public.is_household()`. The bucket stays public, so public object URLs still load for anyone. AnyoneCanParent also uploads here under `acp/` and needs a signed-in session after the lockdown.
+
+**Reads:** the app displays every image through public URLs (`getStorageUrl()`, `/storage/v1/object/public/...`). Nothing calls `.list()`. `.download()` is used only by the shower manager's photo ZIP (signed in), and `.remove()` before deletes/upserts.
 
 ### `kristory-media` (public, 50 MB limit)
 Created in 031.
 - **Allowed MIME types:** `video/mp4`, `video/webm`, `video/quicktime`, `audio/mpeg`, `audio/mp4`, `audio/x-m4a`, `audio/ogg`, `audio/webm`, `audio/wav`, `audio/x-wav`, `image/jpeg`.
 - **Paths:** `{entry_id}/{uuid}.{ext}`, with video posters at `{entry_id}/{uuid}-thumb.jpg`.
-- **Upload:** raw XHR POST with `x-upsert: false`, for progress reporting (`src/lib/media.ts`).
+- **Upload:** raw XHR POST with `x-upsert: false`, for progress reporting (`src/lib/media.ts`). Sends the session access token as `Authorization` and the anon key as `apikey`.
 - **URL builder:** `getMediaUrl()`.
-- **Policies (031):** "kristory-media public read" (select), "public insert" (insert), "public delete" (delete). No update policy.
+- **Policies (031):** "kristory-media public read" (select), "public insert" (insert), "public delete" (delete). No update policy. The lockdown SQL replaces them with `kristory household media select|insert|update|delete` (authenticated + `is_household()`); the bucket stays public.
 - **Deleting an entry** must call `deleteEntryMediaFiles(entryId)` first. The rows cascade but the files don't.
 
 `api/` never touches Storage. No other buckets are used.
@@ -513,8 +520,7 @@ Created in 031.
 ### Current known issues (found while writing this snapshot)
 - **Registry transfer marks were reset.** Migration 029 went in on 2026-10-17. Before that, "Mark on Babylist" writes failed, so every pick starts as not transferred and must be marked again.
 - **The Baby milestone "Share with family?" prompt never creates a post.** `handleCompleteMilestone` (`Baby.tsx:151`) doesn't link an entry, so `result.entry_id` is always null and "Share" just navigates to `/journal/{today}`.
-- **The shower manager shares the family PIN and its localStorage flag.** Anyone who unlocked the Babory on that origin can open `/shower/m`.
-- **PINs are checked on the client** and are readable by anyone holding the anon key: `app_settings.app_pin` and `baby_profile.family_pin`, both stored as plain text.
+- **After the lockdown SQL, `/shower` stops working for guests:** anon can't read the event, RSVP, or upload photos. The Babory is household-only too.
 - **"Visit The Babory →" on `/shower` is dead on the shower custom domain,** which redirects it back to `/shower`.
 - **The shower ICS is hardcoded** to 11:30 AM–2:00 PM America/New_York.
 - **Version mismatch:** Settings → About shows "Version 1.0.0", but backups write `app_version: '1.1.0'`.
@@ -594,7 +600,7 @@ d716b41 Custom item editing + image field + RLS safety on 028
 - **Dropped `created_at`** on items, milestones, posts and name suggestions. The "Recent" sorts depend on these.
 - **`tagged_items.user_id` (the creator) is dropped.** Participants survive.
 - **`categories.user_id`** and all tag/category IDs are dropped.
-- **`app_settings` contains `app_pin` in plain text.** Treat backup ZIPs as sensitive.
+- **`app_pin` is skipped** when writing `app_settings` to data.json (and the lockdown deletes the row). Still treat backup ZIPs as sensitive.
 
 ### Files not in the ZIP
 - **All shower images:** guest photos `shower-photos/*`, `shower/background.jpg`, `shower/tile.jpg`, gift photos `gifts/*`. The rows are in data.json, but the files are not downloaded.
@@ -610,8 +616,8 @@ d716b41 Custom item editing + image field + RLS safety on 028
   - The shared-database relationship with the extension repo and Axiom.
 
 ### Browser state (never backed up)
-- **localStorage:** theme, baby-widget hidden, backup snooze, dismissed trip suggestions, Lists open state, family PIN flag, shower-manager collapse state, registry search refiners.
-- **sessionStorage:** PIN unlock, quick action.
+- **localStorage:** theme, baby-widget hidden, backup snooze, dismissed trip suggestions, Lists open state, shower-manager collapse state, registry search refiners.
+- **sessionStorage:** quick action. (The Auth session lives in localStorage `kristory-auth`.)
 
 ### No restore
 - Settings → Restore is a disabled "Coming soon" button.

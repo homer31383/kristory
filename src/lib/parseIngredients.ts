@@ -1,3 +1,4 @@
+import { apiHeaders } from './supabase'
 /**
  * Client helper for the `/api/parse-ingredients` Vercel function, which turns
  * freeform recipe ingredient text into structured grocery items via Claude.
@@ -24,7 +25,7 @@ export async function parseRecipeIngredients(
   try {
     const res = await fetch('/api/parse-ingredients', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await apiHeaders(),
       body: JSON.stringify({ ingredients, categories }),
       signal: controller.signal,
     })

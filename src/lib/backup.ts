@@ -263,11 +263,9 @@ function buildDataJson(raw: Awaited<ReturnType<typeof fetchData>>) {
   // App settings as key-value
   const settingsObj: Record<string, string> = {}
   for (const s of raw.appSettings) {
+    // The retired app PIN is never written to backups.
+    if (s.key === 'app_pin') continue
     settingsObj[s.key] = s.value
-  }
-  // Include family PIN from baby profile
-  if (raw.babyProfile?.family_pin) {
-    settingsObj.family_pin = raw.babyProfile.family_pin
   }
 
   return {

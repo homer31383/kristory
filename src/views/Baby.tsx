@@ -317,8 +317,7 @@ export default function Baby() {
       {/* Family Feed Card */}
       {(() => {
         const feedUrl = `${window.location.origin}/family`
-        const pin = profile?.family_pin || '2026'
-        const shareMessage = `Follow along with our baby updates! Visit ${feedUrl} and enter PIN: ${pin}`
+        const shareMessage = `Follow along with our baby updates! Visit ${feedUrl}`
         return (
           <div
             className="rounded-xl border p-4 mb-5"
@@ -327,7 +326,7 @@ export default function Baby() {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Family Feed</div>
-                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>PIN: {pin}</div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Sign-in required to view</div>
               </div>
             </div>
             <button
@@ -405,7 +404,7 @@ export default function Baby() {
                   <span className="text-lg">📋</span>
                   <div className="flex-1">
                     <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                      {shareCopied ? 'Copied!' : 'Copy Link & PIN'}
+                      {shareCopied ? 'Copied!' : 'Copy Link'}
                     </div>
                     <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Copy to clipboard</div>
                   </div>

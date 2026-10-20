@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { verifyHousehold } from './_lib/household.js'
 
 /**
  * Vercel serverless function: reads a photo of a bookshelf and returns
@@ -71,6 +72,10 @@ function normalize(raw: unknown[]): DetectedBook[] {
 }
 
 export async function POST(req: Request): Promise<Response> {
+  // Signed-in household members only (Supabase access token in Authorization).
+  const auth = await verifyHousehold(req)
+  if (!auth.ok) return auth.response
+
   console.log('scan-bookshelf: invoked, API key present:', !!process.env.ANTHROPIC_API_KEY)
 
   const apiKey = process.env.ANTHROPIC_API_KEY

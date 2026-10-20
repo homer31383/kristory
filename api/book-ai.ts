@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { verifyHousehold } from './_lib/household.js'
 
 /**
  * Vercel serverless function: generates AI assistance for a book entry.
@@ -44,6 +45,10 @@ Available tags: ${tagList}${desc}`
 }
 
 export async function POST(req: Request): Promise<Response> {
+  // Signed-in household members only (Supabase access token in Authorization).
+  const auth = await verifyHousehold(req)
+  if (!auth.ok) return auth.response
+
   console.log('book-ai: invoked, API key present:', !!process.env.ANTHROPIC_API_KEY)
 
   const apiKey = process.env.ANTHROPIC_API_KEY

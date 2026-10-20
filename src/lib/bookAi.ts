@@ -1,3 +1,4 @@
+import { apiHeaders } from './supabase'
 /**
  * Client wrapper for /api/book-ai. Generates short summaries / themes for
  * a book on demand. The function is name-keyed in vercel.json with a 30s
@@ -21,7 +22,7 @@ export async function generateBookAI(input: BookAIInput): Promise<string> {
   try {
     const res = await fetch('/api/book-ai', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: await apiHeaders(),
       body: JSON.stringify({
         action: input.action,
         title: input.title,

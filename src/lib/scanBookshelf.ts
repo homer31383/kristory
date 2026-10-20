@@ -1,3 +1,4 @@
+import { apiHeaders } from './supabase'
 /**
  * Client wrapper for /api/scan-bookshelf. Sends one base64 photo of a
  * bookshelf and gets back a list of detected books (title + optional
@@ -23,7 +24,7 @@ export async function scanBookshelf(input: ScanBookshelfInput): Promise<Detected
   try {
     const res = await fetch('/api/scan-bookshelf', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: await apiHeaders(),
       body: JSON.stringify({
         image: input.image,
         media_type: input.media_type ?? 'image/jpeg',
