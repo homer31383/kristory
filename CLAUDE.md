@@ -69,7 +69,7 @@ These UUIDs are referenced throughout production data — never regenerate them:
 - **Chris**: `9df51388-65e8-44bf-bfad-65729744190b`
 - **Krista**: `cab9d09c-0083-4ce1-aaf5-9a045d8a4315`
 
-The `users` table is NOT created by migration files — it was set up manually in Supabase. The `USERS` constant in `src/lib/constants.ts` has empty `id` strings; the actual UUIDs are fetched at runtime from the `users` table by the `UserPicker` view.
+The `users` table was set up manually in Supabase; `033_hand_made_tables.sql` recreates it for a rebuild. The `USERS` constant in `src/lib/constants.ts` has empty `id` strings; the actual UUIDs are fetched at runtime from the `users` table by the `UserPicker` view.
 
 ## Design System
 
@@ -101,7 +101,7 @@ CSS custom properties defined in `src/index.css` under `:root` (light) and `html
 All tables have RLS **disabled**; the app is private and trusts the client. The schema lives in `supabase/migrations/001`–`032`. The full column-level schema is in `STATE-SNAPSHOT.md` §2.
 
 **Not created by any migration here:**
-- `users`, `baby_profile`, `baby_milestones`: created manually in Supabase.
+- `users`, `baby_profile`, `baby_milestones`: created manually in Supabase. `033_hand_made_tables.sql` recreates them idempotently (with grants) for a fresh rebuild.
 - The core `babylist_*` tables (`registries`, `people`, `catalog_items`, `catalog_tiers`, `custom_items`, `alternatives`, `picks`): created by the standalone Babylist / BabyRegistryExtension repo. That repo shares this database and its migration numbers collide with ours.
 - `meals`, `meal_ingredients`, `grocery_categories`: owned by Axiom Tasks.
 - The `categories.user_id` column exists live but is in no migration.
@@ -223,7 +223,7 @@ The `/family` route uses a completely separate page layout. It only ever queries
 
 3. **Photo upload canvas math**: Use `Math.round(img.width * scale)` in `resizeImage()`. Other rounding causes off-by-one rendering glitches on some devices.
 
-4. **`baby_profile` and `baby_milestones` have no migration file**: Both tables were created manually in Supabase. The disaster recovery `REBUILD-GUIDE.txt` (generated dynamically in backup ZIPs) contains the SQL.
+4. **`baby_profile` and `baby_milestones` were created by hand**: Both tables were created manually in Supabase. `033_hand_made_tables.sql` and the disaster recovery `REBUILD-GUIDE.txt` (generated dynamically in backup ZIPs by `src/lib/backup.ts`) contain the SQL. Keep all three in sync, grants included.
 
 5. **Family feed `published_at` must use entry date**: When creating a `family_posts` row, set `published_at = {entryDate}T12:00:00Z` so the feed timeline reflects when things happened, not when they were shared. Already enforced in `useCreateFamilyPost`.
 

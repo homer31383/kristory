@@ -76,9 +76,9 @@ All app tables run with **RLS disabled** (no Supabase Auth; the client is truste
 
 | Table | Where its schema lives | Notes |
 |---|---|---|
-| `users` | Dashboard, manually. DDL only in REBUILD-GUIDE (`backup.ts`) | `id uuid PK`, `name text NOT NULL`. Chris `9df51388-65e8-44bf-bfad-65729744190b`, Krista `cab9d09c-0083-4ce1-aaf5-9a045d8a4315`. |
-| `baby_profile` | Dashboard, manually. DDL only in REBUILD-GUIDE | `id`, `name`, `due_date date`, `birth_date date`, `birth_weight text`, `birth_length text`, `notes text`, `family_pin text DEFAULT '2026'` (added by 004), `created_at`, `updated_at`. Single row. |
-| `baby_milestones` | Dashboard, manually. DDL only in REBUILD-GUIDE | `id`, `entry_id → journal_entries ON DELETE SET NULL`, `title NOT NULL`, `milestone_type NOT NULL DEFAULT 'custom'`, `milestone_date date NOT NULL`, `notes`, `photo_path`, `created_at`. |
+| `users` | Dashboard, manually. Rebuild DDL in `033_hand_made_tables.sql` and REBUILD-GUIDE (`backup.ts`). Axiom Tasks' `007_user_system` also creates `users` (adds `avatar_emoji`) in this shared project | `id uuid PK`, `name text NOT NULL`. Chris `9df51388-65e8-44bf-bfad-65729744190b`, Krista `cab9d09c-0083-4ce1-aaf5-9a045d8a4315`. |
+| `baby_profile` | Dashboard, manually. Rebuild DDL in `033_hand_made_tables.sql` and REBUILD-GUIDE | `id`, `name`, `due_date date`, `birth_date date`, `birth_weight text`, `birth_length text`, `notes text`, `family_pin text DEFAULT '2026'` (added by 004), `created_at`, `updated_at`. Single row. |
+| `baby_milestones` | Dashboard, manually. Rebuild DDL in `033_hand_made_tables.sql` and REBUILD-GUIDE | `id`, `entry_id → journal_entries ON DELETE SET NULL`, `title NOT NULL`, `milestone_type NOT NULL DEFAULT 'custom'`, `milestone_date date NOT NULL`, `notes`, `photo_path`, `created_at`. |
 | `babylist_registries`, `babylist_people`, `babylist_catalog_items`, `babylist_catalog_tiers`, `babylist_custom_items`, `babylist_alternatives`, `babylist_picks` | Standalone Babylist / extension repo | This repo's migrations only ALTER or reference them. No DDL here or in the backup. |
 | `meals`, `meal_ingredients`, `grocery_categories` | Axiom Tasks app | Written by "Save as Axiom Meal". |
 

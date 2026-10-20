@@ -432,6 +432,7 @@ CREATE TABLE IF NOT EXISTS users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL
 );
+grant select, insert, update, delete on public.users to anon, authenticated, service_role;
 
 ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 
@@ -451,6 +452,7 @@ CREATE TABLE IF NOT EXISTS journal_entries (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.journal_entries to anon, authenticated, service_role;
 
 ALTER TABLE journal_entries DISABLE ROW LEVEL SECURITY;
 
@@ -467,6 +469,7 @@ CREATE TABLE IF NOT EXISTS entry_sections (
   updated_at timestamptz DEFAULT now(),
   UNIQUE (entry_id, user_id)
 );
+grant select, insert, update, delete on public.entry_sections to anon, authenticated, service_role;
 
 ALTER TABLE entry_sections ADD COLUMN IF NOT EXISTS fts tsvector
   GENERATED ALWAYS AS (to_tsvector('english', coalesce(content, ''))) STORED;
@@ -486,6 +489,7 @@ CREATE TABLE IF NOT EXISTS entry_photos (
   display_order integer DEFAULT 0,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.entry_photos to anon, authenticated, service_role;
 
 ALTER TABLE entry_photos DISABLE ROW LEVEL SECURITY;
 
@@ -500,6 +504,7 @@ CREATE TABLE IF NOT EXISTS categories (
   is_default boolean DEFAULT false,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.categories to anon, authenticated, service_role;
 
 ALTER TABLE categories DISABLE ROW LEVEL SECURITY;
 
@@ -550,6 +555,7 @@ CREATE TABLE IF NOT EXISTS tagged_items (
   subcategory text,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.tagged_items to anon, authenticated, service_role;
 
 CREATE INDEX IF NOT EXISTS idx_tagged_items_name ON tagged_items USING GIN (to_tsvector('english', name));
 
@@ -565,6 +571,7 @@ CREATE TABLE IF NOT EXISTS recipe_tags (
   emoji text,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.recipe_tags to anon, authenticated, service_role;
 
 ALTER TABLE recipe_tags DISABLE ROW LEVEL SECURITY;
 
@@ -582,6 +589,7 @@ CREATE TABLE IF NOT EXISTS tagged_item_recipe_tags (
   recipe_tag_id uuid REFERENCES recipe_tags(id) ON DELETE CASCADE,
   PRIMARY KEY (tagged_item_id, recipe_tag_id)
 );
+grant select, insert, update, delete on public.tagged_item_recipe_tags to anon, authenticated, service_role;
 
 ALTER TABLE tagged_item_recipe_tags DISABLE ROW LEVEL SECURITY;
 
@@ -594,6 +602,7 @@ CREATE TABLE IF NOT EXISTS tagged_item_participants (
   user_id uuid REFERENCES users(id) ON DELETE CASCADE,
   PRIMARY KEY (tagged_item_id, user_id)
 );
+grant select, insert, update, delete on public.tagged_item_participants to anon, authenticated, service_role;
 
 ALTER TABLE tagged_item_participants DISABLE ROW LEVEL SECURITY;
 
@@ -607,6 +616,7 @@ CREATE TABLE IF NOT EXISTS media_tags (
   category_type text NOT NULL DEFAULT 'books',
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.media_tags to anon, authenticated, service_role;
 
 ALTER TABLE media_tags DISABLE ROW LEVEL SECURITY;
 
@@ -646,6 +656,7 @@ CREATE TABLE IF NOT EXISTS tagged_item_media_tags (
   media_tag_id uuid REFERENCES media_tags(id) ON DELETE CASCADE,
   PRIMARY KEY (tagged_item_id, media_tag_id)
 );
+grant select, insert, update, delete on public.tagged_item_media_tags to anon, authenticated, service_role;
 
 ALTER TABLE tagged_item_media_tags DISABLE ROW LEVEL SECURITY;
 
@@ -662,6 +673,7 @@ CREATE TABLE IF NOT EXISTS trips (
   end_date date NOT NULL,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.trips to anon, authenticated, service_role;
 
 ALTER TABLE trips DISABLE ROW LEVEL SECURITY;
 
@@ -674,6 +686,7 @@ CREATE TABLE IF NOT EXISTS trip_entries (
   entry_id uuid NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
   PRIMARY KEY (trip_id, entry_id)
 );
+grant select, insert, update, delete on public.trip_entries to anon, authenticated, service_role;
 
 ALTER TABLE trip_entries DISABLE ROW LEVEL SECURITY;
 
@@ -693,6 +706,7 @@ CREATE TABLE IF NOT EXISTS baby_profile (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_profile to anon, authenticated, service_role;
 
 ALTER TABLE baby_profile DISABLE ROW LEVEL SECURITY;
 
@@ -713,6 +727,7 @@ CREATE TABLE IF NOT EXISTS baby_milestones (
   photo_path text,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_milestones to anon, authenticated, service_role;
 
 ALTER TABLE baby_milestones DISABLE ROW LEVEL SECURITY;
 
@@ -729,6 +744,7 @@ CREATE TABLE IF NOT EXISTS family_posts (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.family_posts to anon, authenticated, service_role;
 
 ALTER TABLE family_posts DISABLE ROW LEVEL SECURITY;
 
@@ -742,6 +758,7 @@ CREATE TABLE IF NOT EXISTS family_post_photos (
   entry_photo_id uuid REFERENCES entry_photos(id) ON DELETE CASCADE,
   display_order integer DEFAULT 0
 );
+grant select, insert, update, delete on public.family_post_photos to anon, authenticated, service_role;
 
 ALTER TABLE family_post_photos DISABLE ROW LEVEL SECURITY;
 
@@ -755,6 +772,7 @@ CREATE TABLE IF NOT EXISTS baby_name_suggestions (
   suggested_by text,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_name_suggestions to anon, authenticated, service_role;
 
 ALTER TABLE baby_name_suggestions DISABLE ROW LEVEL SECURITY;
 
@@ -767,6 +785,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
   value text NOT NULL,
   updated_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.app_settings to anon, authenticated, service_role;
 
 ALTER TABLE app_settings DISABLE ROW LEVEL SECURITY;
 
@@ -796,6 +815,7 @@ CREATE TABLE IF NOT EXISTS baby_shower_event (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_shower_event to anon, authenticated, service_role;
 
 ALTER TABLE baby_shower_event DISABLE ROW LEVEL SECURITY;
 
@@ -814,6 +834,7 @@ CREATE TABLE IF NOT EXISTS baby_shower_helpers (
   color text DEFAULT '#6B5CA5',
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_shower_helpers to anon, authenticated, service_role;
 
 ALTER TABLE baby_shower_helpers DISABLE ROW LEVEL SECURITY;
 
@@ -844,6 +865,7 @@ CREATE TABLE IF NOT EXISTS baby_shower_guests (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_shower_guests to anon, authenticated, service_role;
 
 ALTER TABLE baby_shower_guests DISABLE ROW LEVEL SECURITY;
 
@@ -860,6 +882,7 @@ CREATE TABLE IF NOT EXISTS baby_shower_tasks (
   due_date date,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_shower_tasks to anon, authenticated, service_role;
 
 ALTER TABLE baby_shower_tasks DISABLE ROW LEVEL SECURITY;
 
@@ -874,6 +897,7 @@ CREATE TABLE IF NOT EXISTS baby_shower_schedule (
   display_order integer DEFAULT 0,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_shower_schedule to anon, authenticated, service_role;
 
 ALTER TABLE baby_shower_schedule DISABLE ROW LEVEL SECURITY;
 
@@ -887,6 +911,7 @@ CREATE TABLE IF NOT EXISTS baby_shower_photos (
   uploaded_by text,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_shower_photos to anon, authenticated, service_role;
 
 ALTER TABLE baby_shower_photos DISABLE ROW LEVEL SECURITY;
 
@@ -904,6 +929,7 @@ CREATE TABLE IF NOT EXISTS baby_shower_menu (
   display_order integer DEFAULT 0,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.baby_shower_menu to anon, authenticated, service_role;
 
 ALTER TABLE baby_shower_menu DISABLE ROW LEVEL SECURITY;
 
@@ -928,6 +954,7 @@ CREATE TABLE IF NOT EXISTS journal_media (
   sort_order integer DEFAULT 0,
   created_at timestamptz DEFAULT now()
 );
+grant select, insert, update, delete on public.journal_media to anon, authenticated, service_role;
 
 CREATE INDEX IF NOT EXISTS journal_media_entry_id_idx ON journal_media(entry_id);
 ALTER TABLE journal_media DISABLE ROW LEVEL SECURITY;
