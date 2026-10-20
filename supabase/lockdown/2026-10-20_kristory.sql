@@ -8,9 +8,12 @@
 --   1. Every Kristory-owned table: RLS on, ONE policy for `authenticated`
 --      (public.is_household() for using + with check), anon loses all access,
 --      authenticated and service_role keep explicit grants (repo convention).
---      One exception: baby_profile keeps an anon SELECT policy for Order Up
---      (see below). babory_family_links (from the setup file) is re-asserted.
---   2. Deletes the old app_settings.app_pin row (the app now uses Supabase Auth).
+--      One exception: anon may SELECT baby_profile's name and birth_date
+--      columns only, for Order Up (see below). babory_family_links (from the
+--      setup file) is re-asserted.
+--   2. Deletes the old app_settings.app_pin row and clears
+--      baby_profile.family_pin (the app now uses Supabase Auth; both PINs are
+--      retired).
 --   3. Views over these tables (none are known; handled generically):
 --      security_invoker = true and anon access revoked.
 --   4. Storage buckets kristory-photos and kristory-media: the public/anon
@@ -35,9 +38,15 @@
 --
 -- Cross-app readers of tables locked here (they need a household session too):
 --   baby_profile, baby_milestones, app_settings  AnyoneCanParent
---   baby_profile                                 Order Up (baby age)
+--   baby_profile (name, birth_date via anon)     Order Up: column-level exception below
 --   tagged_items                                 Axiom Tasks (Kristory recipes)
 --   kristory-photos objects under acp/           AnyoneCanParent uploads
+--
+-- Extended family read the Babory through a private link
+-- (/family#k=<token>), served by api/babory-feed.ts with the service key.
+-- They never touch these tables as anon; the app itself is household-only.
+-- The baby registry (babylist_* overlay tables) is retired in the app; its
+-- three overlay tables are locked here like everything else.
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
@@ -92,16 +101,19 @@ begin
 end $$;
 
 -- Order Up exception (TEMPORARY). Order Up reads baby_profile with the anon
--- key to show the baby's age, and it has no sign-in yet. So baby_profile keeps
--- ONE extra policy: anon may SELECT every row and column (insert/update/delete
--- stay household-only). The table is a single row: id, name, due_date,
--- birth_date, birth_weight, birth_length, notes, family_pin (unused, still
--- holds the old Babory PIN), created_at, updated_at.
--- TODO: Order Up must move to sign-in or a narrow function, then drop this
--- policy and the anon grant.
+-- key to show the baby's age; it has no sign-in yet and uses only `name` and
+-- `birth_date`. So anon gets a column-level SELECT on exactly those two
+-- columns (no table-level grant, no insert/update/delete), plus one policy
+-- that lets anon see the single row.
+-- NOTE: Order Up currently queries `select *`, which fails under column
+-- grants ("permission denied") until it asks for `name,birth_date`
+-- explicitly. That change has to ship in Order Up.
+-- TODO: Order Up must move to sign-in or a narrow function, then drop the
+-- baby_profile_anon_read policy and the anon column grant.
+revoke all on public.baby_profile from anon;
+grant select (name, birth_date) on public.baby_profile to anon;
 drop policy if exists baby_profile_anon_read on public.baby_profile;
 create policy baby_profile_anon_read on public.baby_profile for select to anon using (true);
-grant select on public.baby_profile to anon;
 
 -- babory_family_links is created (already locked) by 2026-10-20_kristory_setup.sql.
 -- Re-assert its lock here; this is a no-op when the setup file ran.
@@ -148,6 +160,9 @@ end $$;
 
 -- ─── 2. Retire the app PIN ──────────────────────────────────────────────────
 delete from public.app_settings where key = 'app_pin';
+-- The old Babory PIN: unused since the sign-in build, and it must not sit in a
+-- table anon can partly read.
+update public.baby_profile set family_pin = null;
 
 -- ─── 3. Views over the locked tables ────────────────────────────────────────
 do $$
@@ -295,7 +310,7 @@ commit;
 --       'babylist_item_states','babylist_catalog_tier_overrides','babylist_section_states')
 --   order by 1;
 --
--- anon has no table privileges left on them (expect exactly 1 row: baby_profile SELECT, the Order Up exception):
+-- anon has no TABLE-level privileges left on them (expect 0 rows):
 --   select table_name, privilege_type from information_schema.role_table_grants
 --   where table_schema = 'public' and grantee = 'anon'
 --     and table_name in ('journal_entries','entry_sections','entry_photos','journal_media','tagged_items',
@@ -304,6 +319,22 @@ commit;
 --       'family_post_photos','app_settings','baby_shower_event','baby_shower_guests','baby_shower_tasks',
 --       'baby_shower_schedule','baby_shower_photos','baby_shower_helpers','baby_shower_menu',
 --       'babylist_item_states','babylist_catalog_tier_overrides','babylist_section_states');
+--
+-- anon column-level access (expect exactly 2 rows: baby_profile.name and
+-- baby_profile.birth_date, SELECT):
+--   select table_name, column_name, privilege_type from information_schema.column_privileges
+--   where table_schema = 'public' and grantee = 'anon'
+--     and table_name in ('journal_entries','entry_sections','entry_photos','journal_media','tagged_items',
+--       'tagged_item_participants','recipe_tags','tagged_item_recipe_tags','media_tags','tagged_item_media_tags',
+--       'trips','trip_entries','baby_profile','baby_milestones','baby_name_suggestions','family_posts',
+--       'family_post_photos','app_settings','baby_shower_event','baby_shower_guests','baby_shower_tasks',
+--       'baby_shower_schedule','baby_shower_photos','baby_shower_helpers','baby_shower_menu',
+--       'babylist_item_states','babylist_catalog_tier_overrides','babylist_section_states',
+--       'babory_family_links')
+--   order by 1, 2;
+--
+-- family_pin cleared (expect 0):
+--   select count(*) from public.baby_profile where family_pin is not null;
 --
 -- app_pin is gone (expect 0):
 --   select count(*) from public.app_settings where key = 'app_pin';

@@ -10,8 +10,8 @@ No secrets, keys or PIN values appear in this file.
 > - Sign-in is Supabase Auth email + password (Chris and Krista; sign-ups disabled). `UserPicker`, `AppPinLock`, `useAppPin` and the Babory / shower-manager PIN gates are removed. `src/hooks/useUser.tsx` resolves the Kristory `users` row by matching the Auth account's `user_metadata.name`.
 > - `supabase/lockdown/2026-10-20_kristory.sql` (written, **not applied** at the time of writing) enables RLS with one `household_only` policy (`public.is_household()`) on 28 Kristory-owned tables, revokes anon, deletes `app_settings.app_pin`, and replaces the open storage policies on `kristory-photos` and `kristory-media` with household-only ones. Buckets stay public. Rollback: `2026-10-20_kristory_rollback.sql`.
 > - Every `api/` function verifies the caller (`api/_lib/household.ts`), except `api/babory-feed.ts`, which serves the read-only Babory to holders of a private family link (hash stored in `babory_family_links`, created by `2026-10-20_kristory_setup.sql`, which must run before the deploy).
-> - `/shower` is closed: `ShowerClosed` shows a static message with no Supabase calls. `BabyShower.tsx` is kept, unrouted.
-> - Order Up exception: the lockdown keeps `baby_profile_anon_read` (anon SELECT on `baby_profile`) until Order Up moves to sign-in or a narrow function.
+> - `/shower` and `/registry` are closed: `ClosedPage` shows a static message with no Supabase calls. `BabyShower.tsx`, `Registry.tsx` and `src/registry/` are kept, unrouted and unimported; the registry nav entries, realtime channels and `registry.css` import are gone. No `babylist_*` table is touched at runtime.
+> - Order Up exception: the lockdown gives anon a column-level `select (name, birth_date)` on `baby_profile` plus the `baby_profile_anon_read` policy, until Order Up moves to sign-in or a narrow function. Order Up's current `select *` fails under that until it requests `name,birth_date`. The lockdown also sets `family_pin` to null.
 
 ---
 
@@ -23,7 +23,7 @@ No secrets, keys or PIN values appear in this file.
 
 | Path | View |
 |---|---|
-| `/shower` | `ShowerClosed` (static, no Supabase calls) |
+| `/shower` | `ClosedPage` (static, no Supabase calls) |
 | `/shower/m` | `ShowerManage` (household sign-in) |
 | `*` | `<Navigate to="/shower" replace>` |
 
@@ -39,9 +39,9 @@ Every other hostname gets the full route table below. `vercel.json` has no domai
 | `/photos` | `PhotoMemories` | ✅ | — |
 | `/library/river` | `LibraryRiver` | ✅ | — |
 | `/library/:categoryId/river` | `LibraryRiver` | ✅ | — |
-| `/family` | `FamilyFeed` ("The Babory") | ✅, or read-only with a private link `?k=` | — |
+| `/family` | `FamilyFeed` ("The Babory") | ✅, or read-only with a private link `#k=` | — |
 | `/family/photos` | `FamilyPhotos` | ✅, or read-only with a private link | — |
-| `/shower` | `ShowerClosed` | ❌ public, static "This page is closed" | — |
+| `/shower` | `ClosedPage` | ❌ public, static "This page is closed" | — |
 | `/shower/m` | `ShowerManage` | ✅ | — |
 | `/journal` | `Journal` | ✅ | ✅ |
 | `/journal/:date` | `EntryDetail` | ✅ | ✅ |
@@ -58,7 +58,7 @@ Every other hostname gets the full route table below. `vercel.json` has no domai
 | `/trips/new` | `CreateTrip` | ✅ | ✅ |
 | `/trips/:tripId` | `TripDetail` | ✅ | ✅ |
 | `/baby` | `Baby` | ✅ | ✅ |
-| `/registry` | `Registry` | ✅ | ✅ |
+| `/registry` | `ClosedPage` (retired) | ❌ public, static | — |
 | `/settings` | `Settings` | ✅ | ✅ |
 
 `RequireAuth` shows the sign-in screen until a household member is signed in and matched to a `users` row (it also calls `rpc('is_household')`). The session persists in localStorage (`kristory-auth`). Sign out is in Settings > Account; it calls `supabase.removeAllChannels()` and the React Query cache is cleared.
@@ -374,7 +374,9 @@ All ★ `49aab0b` (05-21) unless noted.
   - Merge unmatched RSVPs.
   - Guest list: filters, add/edit, side L/B, invite/RSVP/gift/thank-you tracking, gift photo, Print TY, CSV, Export for Minted.
 
-### Registry (`/registry`)
+### Registry (`/registry`) — RETIRED 2026-10-20
+The route now shows `ClosedPage`; the code below is kept but unrouted.
+
 Everything here is ★ since `1ca0a38` (05-10). Single hard-coded `REGISTRY_ID`.
 - **Access:** locked to Chris and Krista via `babylist_people.kristory_user_id` (`9cd0a31`, 05-19).
 - **Overview:** dashboard totals (Budget/Mid/Premium/your picks), per-person totals, presence dot. Filter bar (priority, where to buy, mine, hide muted, saved only, "Not yet on Babylist").

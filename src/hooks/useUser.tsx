@@ -119,7 +119,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signOut = useCallback(async () => {
-    // Tear down realtime (registry sync and presence) before the token goes.
+    // Tear down any realtime channels before the token goes (none are used
+    // since the registry was retired; kept as a safety net).
     await supabase.removeAllChannels()
     await supabase.auth.signOut()
   }, [])

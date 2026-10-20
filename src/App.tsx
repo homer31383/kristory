@@ -24,10 +24,9 @@ import FamilyFeed from './views/FamilyFeed'
 import FamilyPhotos from './views/FamilyPhotos'
 import PhotoMemories from './views/PhotoMemories'
 import LibraryRiver from './views/LibraryRiver'
-import ShowerClosed from './views/ShowerClosed'
+import ClosedPage from './views/ClosedPage'
 import { getFamilyLinkToken } from './lib/baboryLink'
 import ShowerManage from './views/ShowerManage'
-import Registry from './views/Registry'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,7 +49,7 @@ function ClearCacheOnSignOut() {
 }
 
 // The Babory: signed-in household members get the full feed. Someone who is
-// signed out but holds a private family link (/family?k=...) gets the
+// signed out but holds a private family link (/family#k=...) gets the
 // read-only feed from /api/babory-feed instead of the sign-in screen.
 function FamilyRoute({ photos = false }: { photos?: boolean }) {
   const { status } = useUser()
@@ -67,7 +66,7 @@ function AppRoutes() {
   if (isShowerDomain) {
     return (
       <Routes>
-        <Route path="/shower" element={<ShowerClosed />} />
+        <Route path="/shower" element={<ClosedPage title="Baby Shower" />} />
         <Route path="/shower/m" element={<RequireAuth title="Shower Manager"><ShowerManage /></RequireAuth>} />
         <Route path="*" element={<Navigate to="/shower" replace />} />
       </Routes>
@@ -103,8 +102,10 @@ function AppRoutes() {
           </RequireAuth>
         }
       />
-      <Route path="/shower" element={<ShowerClosed />} />
+      <Route path="/shower" element={<ClosedPage title="Baby Shower" />} />
       <Route path="/shower/m" element={<RequireAuth title="Shower Manager"><ShowerManage /></RequireAuth>} />
+      {/* The registry is retired: static page, no auth or database calls. */}
+      <Route path="/registry" element={<ClosedPage title="Baby Registry" note="The registry is no longer in use." />} />
       <Route
         element={
           <RequireAuth>
@@ -127,7 +128,6 @@ function AppRoutes() {
         <Route path="/trips/new" element={<CreateTrip />} />
         <Route path="/trips/:tripId" element={<TripDetail />} />
         <Route path="/baby" element={<Baby />} />
-        <Route path="/registry" element={<Registry />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
     </Routes>

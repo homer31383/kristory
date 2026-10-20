@@ -6,6 +6,7 @@
 -- anon, authenticated and service_role (the explicit table grant convention),
 -- and the open storage policies on kristory-photos and kristory-media.
 --
+-- NOT restored: baby_profile.family_pin (cleared by the lockdown; value unknown).
 -- NOT restored: the app_settings 'app_pin' row. Its value was never in the
 -- repo, so it can't be recreated here. If the old PIN gate is ever brought
 -- back, set a new one with:
@@ -43,9 +44,16 @@ begin
   end loop;
 end $$;
 
--- The Order Up exception policy on baby_profile goes too (anon gets full CRUD
--- back from the loop above, as before the lockdown).
+-- The Order Up exception goes too: drop its policy and the column-level
+-- grant, so baby_profile is back to the pre-lockdown shape (table-level
+-- select/insert/update/delete for anon, authenticated and service_role, from
+-- the loop above; no column grants).
 drop policy if exists baby_profile_anon_read on public.baby_profile;
+revoke select (name, birth_date) on public.baby_profile from anon;
+grant select, insert, update, delete on public.baby_profile to anon, authenticated, service_role;
+
+-- NOT restored: baby_profile.family_pin, which the lockdown set to null. Its
+-- old value is not in the repo, and nothing reads it any more.
 
 -- babory_family_links is NOT unlocked here: it was created locked by the setup
 -- file and has its own rollback (2026-10-20_kristory_setup_rollback.sql).
