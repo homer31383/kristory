@@ -43,6 +43,13 @@ begin
   end loop;
 end $$;
 
+-- The Order Up exception policy on baby_profile goes too (anon gets full CRUD
+-- back from the loop above, as before the lockdown).
+drop policy if exists baby_profile_anon_read on public.baby_profile;
+
+-- babory_family_links is NOT unlocked here: it was created locked by the setup
+-- file and has its own rollback (2026-10-20_kristory_setup_rollback.sql).
+
 -- Sequences owned by those tables (none expected).
 do $$
 declare

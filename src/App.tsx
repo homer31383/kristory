@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { UserProvider, useUser } from './hooks/useUser'
@@ -24,7 +24,8 @@ import FamilyFeed from './views/FamilyFeed'
 import FamilyPhotos from './views/FamilyPhotos'
 import PhotoMemories from './views/PhotoMemories'
 import LibraryRiver from './views/LibraryRiver'
-import BabyShower from './views/BabyShower'
+import ShowerClosed from './views/ShowerClosed'
+import { getFamilyLinkToken } from './lib/baboryLink'
 import ShowerManage from './views/ShowerManage'
 import Registry from './views/Registry'
 
@@ -48,13 +49,25 @@ function ClearCacheOnSignOut() {
   return null
 }
 
+// The Babory: signed-in household members get the full feed. Someone who is
+// signed out but holds a private family link (/family?k=...) gets the
+// read-only feed from /api/babory-feed instead of the sign-in screen.
+function FamilyRoute({ photos = false }: { photos?: boolean }) {
+  const { status } = useUser()
+  const [linkToken] = useState(getFamilyLinkToken)
+  if (linkToken && status === 'signed-out') {
+    return photos ? <FamilyPhotos linkToken={linkToken} /> : <FamilyFeed linkToken={linkToken} />
+  }
+  return <RequireAuth title="The Babory">{photos ? <FamilyPhotos /> : <FamilyFeed />}</RequireAuth>
+}
+
 function AppRoutes() {
   const isShowerDomain = window.location.hostname.endsWith('leahybernierbabyshower.com')
 
   if (isShowerDomain) {
     return (
       <Routes>
-        <Route path="/shower" element={<BabyShower />} />
+        <Route path="/shower" element={<ShowerClosed />} />
         <Route path="/shower/m" element={<RequireAuth title="Shower Manager"><ShowerManage /></RequireAuth>} />
         <Route path="*" element={<Navigate to="/shower" replace />} />
       </Routes>
@@ -72,8 +85,8 @@ function AppRoutes() {
           </RequireAuth>
         }
       />
-      <Route path="/family" element={<RequireAuth title="The Babory"><FamilyFeed /></RequireAuth>} />
-      <Route path="/family/photos" element={<RequireAuth title="The Babory"><FamilyPhotos /></RequireAuth>} />
+      <Route path="/family" element={<FamilyRoute />} />
+      <Route path="/family/photos" element={<FamilyRoute photos />} />
       <Route
         path="/library/river"
         element={
@@ -90,7 +103,7 @@ function AppRoutes() {
           </RequireAuth>
         }
       />
-      <Route path="/shower" element={<BabyShower />} />
+      <Route path="/shower" element={<ShowerClosed />} />
       <Route path="/shower/m" element={<RequireAuth title="Shower Manager"><ShowerManage /></RequireAuth>} />
       <Route
         element={

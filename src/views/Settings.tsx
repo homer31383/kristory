@@ -11,6 +11,7 @@ import { createFullBackup, estimateBackupSize, type BackupProgress } from '../li
 import { exportJSON, exportPDF } from '../lib/export'
 import ImportJournal from '../components/ImportJournal'
 import ImportRecipes from '../components/ImportRecipes'
+import FamilyLinkControls from '../components/FamilyLinkControls'
 import type { ThemeMode, Category } from '../types'
 
 export default function Settings() {
@@ -49,7 +50,6 @@ export default function Settings() {
   const [showBabyWidget, setShowBabyWidget] = useState(() => localStorage.getItem('kristory-baby-widget-hidden') !== 'true')
 
   // Family feed
-  const [linkCopied, setLinkCopied] = useState(false)
 
   // Backup
   const [backingUp, setBackingUp] = useState(false)
@@ -495,34 +495,7 @@ export default function Settings() {
       {babyProfile && (
         <Section title="Family Feed">
           <div className="space-y-3">
-            {/* Share link */}
-            <div
-              className="rounded-lg border p-3"
-              style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
-            >
-              <div className="text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
-                Share Link
-              </div>
-              <div className="flex items-center gap-2">
-                <code className="text-xs flex-1 truncate" style={{ color: 'var(--text-secondary)' }}>
-                  {window.location.origin}/family
-                </code>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(`${window.location.origin}/family`)
-                    setLinkCopied(true)
-                    setTimeout(() => setLinkCopied(false), 2000)
-                  }}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer"
-                  style={{
-                    backgroundColor: linkCopied ? '#F0FAF0' : 'var(--accent)',
-                    color: linkCopied ? '#4A9D5A' : 'white',
-                  }}
-                >
-                  {linkCopied ? 'Copied!' : 'Copy'}
-                </button>
-              </div>
-            </div>
+            <FamilyLinkControls />
 
             {/* View feed */}
             <a

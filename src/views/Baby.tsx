@@ -14,6 +14,7 @@ import {
 } from '../hooks/useBaby'
 import { useFamilyPostIds, useCreateFamilyPost } from '../hooks/useFamilyFeed'
 import BottomSheet from '../components/ui/BottomSheet'
+import FamilyLinkControls from '../components/FamilyLinkControls'
 import { useBabyNameSuggestions, useDeleteBabyName } from '../hooks/useBabyNames'
 import { useUser } from '../hooks/useUser'
 import { getStorageUrl, truncateText } from '../lib/helpers'
@@ -92,7 +93,6 @@ export default function Baby() {
   const [milestoneSharePrompt, setMilestoneSharePrompt] = useState<{ title: string; entryId?: string; date: string } | null>(null)
   const [milestoneShareCaption, setMilestoneShareCaption] = useState('')
   const [showShareSheet, setShowShareSheet] = useState(false)
-  const [shareCopied, setShareCopied] = useState(false)
 
   const startEditProfile = () => {
     setProfileName(profile?.name ?? '')
@@ -316,8 +316,6 @@ export default function Baby() {
 
       {/* Family Feed Card */}
       {(() => {
-        const feedUrl = `${window.location.origin}/family`
-        const shareMessage = `Follow along with our baby updates! Visit ${feedUrl}`
         return (
           <div
             className="rounded-xl border p-4 mb-5"
@@ -326,7 +324,7 @@ export default function Baby() {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Family Feed</div>
-                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Sign-in required to view</div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Shared through a private link</div>
               </div>
             </div>
             <button
@@ -339,77 +337,10 @@ export default function Baby() {
 
             <BottomSheet
               isOpen={showShareSheet}
-              onClose={() => { setShowShareSheet(false); setShareCopied(false) }}
+              onClose={() => setShowShareSheet(false)}
               title="Share Family Feed"
             >
-              <div className="space-y-2">
-                {/* Native share (mobile) */}
-                {typeof navigator !== 'undefined' && !!navigator.share && (
-                  <button
-                    onClick={async () => {
-                      try {
-                        await navigator.share({ title: 'Baby Updates from The Babory', text: shareMessage })
-                      } catch { /* user cancelled */ }
-                      setShowShareSheet(false)
-                    }}
-                    className="w-full text-left rounded-xl border p-3 flex items-center gap-3 cursor-pointer"
-                    style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
-                  >
-                    <span className="text-lg">📤</span>
-                    <div className="flex-1">
-                      <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Share...</div>
-                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Use your device's share menu</div>
-                    </div>
-                  </button>
-                )}
-
-                {/* Text / SMS */}
-                <a
-                  href={`sms:?body=${encodeURIComponent(shareMessage)}`}
-                  onClick={() => setShowShareSheet(false)}
-                  className="w-full text-left rounded-xl border p-3 flex items-center gap-3 cursor-pointer block"
-                  style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)', textDecoration: 'none' }}
-                >
-                  <span className="text-lg">💬</span>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Text</div>
-                    <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Send via SMS</div>
-                  </div>
-                </a>
-
-                {/* Email */}
-                <a
-                  href={`mailto:?subject=${encodeURIComponent('Baby Updates from The Babory')}&body=${encodeURIComponent(shareMessage)}`}
-                  onClick={() => setShowShareSheet(false)}
-                  className="w-full text-left rounded-xl border p-3 flex items-center gap-3 cursor-pointer block"
-                  style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)', textDecoration: 'none' }}
-                >
-                  <span className="text-lg">📧</span>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Email</div>
-                    <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Send via email</div>
-                  </div>
-                </a>
-
-                {/* Copy */}
-                <button
-                  onClick={async () => {
-                    await navigator.clipboard.writeText(shareMessage)
-                    setShareCopied(true)
-                    setTimeout(() => { setShareCopied(false); setShowShareSheet(false) }, 1200)
-                  }}
-                  className="w-full text-left rounded-xl border p-3 flex items-center gap-3 cursor-pointer"
-                  style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
-                >
-                  <span className="text-lg">📋</span>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                      {shareCopied ? 'Copied!' : 'Copy Link'}
-                    </div>
-                    <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Copy to clipboard</div>
-                  </div>
-                </button>
-              </div>
+              <FamilyLinkControls />
             </BottomSheet>
           </div>
         )

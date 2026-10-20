@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { format, parse } from 'date-fns'
 import { supabase } from '../lib/supabase'
 import { getStorageUrl } from '../lib/helpers'
+import { useBaboryLinkFeed } from '../hooks/useBaboryLinkFeed'
 
 const PAGE_SIZE = 24
 
@@ -14,9 +15,10 @@ interface FamilyPhoto {
   published_at: string
 }
 
-function useFamilyPhotos() {
+function useFamilyPhotos(enabled: boolean) {
   return useQuery({
     queryKey: ['family-photos'],
+    enabled,
     // Always refetch on mount so opening the page feels fresh.
     staleTime: 0,
     queryFn: async (): Promise<FamilyPhoto[]> => {
@@ -55,9 +57,27 @@ function shuffle<T>(input: T[]): T[] {
   return arr
 }
 
-export default function FamilyPhotos() {
+/** `linkToken` set: a private-link viewer (App.tsx only passes it when signed out). */
+export default function FamilyPhotos({ linkToken }: { linkToken?: string | null }) {
   const navigate = useNavigate()
-  const { data, isLoading } = useFamilyPhotos()
+  const household = useFamilyPhotos(!linkToken)
+  const linkFeed = useBaboryLinkFeed(linkToken ?? null)
+  const linkPhotos = useMemo<FamilyPhoto[] | undefined>(
+    () =>
+      linkFeed.data?.posts.flatMap((post) =>
+        (post.photos ?? [])
+          .filter((ph) => ph.entry_photo?.storage_path)
+          .map((ph) => ({
+            id: ph.id,
+            storage_path: ph.entry_photo!.storage_path,
+            post_id: post.id,
+            published_at: post.published_at,
+          })),
+      ),
+    [linkFeed.data],
+  )
+  const data = linkToken ? linkPhotos : household.data
+  const isLoading = linkToken ? linkFeed.isLoading : household.isLoading
 
   // A nonce generated once per mount — combined with the data identity it
   // guarantees a fresh shuffle every time the page is opened.

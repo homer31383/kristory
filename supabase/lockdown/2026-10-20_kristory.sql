@@ -8,6 +8,8 @@
 --   1. Every Kristory-owned table: RLS on, ONE policy for `authenticated`
 --      (public.is_household() for using + with check), anon loses all access,
 --      authenticated and service_role keep explicit grants (repo convention).
+--      One exception: baby_profile keeps an anon SELECT policy for Order Up
+--      (see below). babory_family_links (from the setup file) is re-asserted.
 --   2. Deletes the old app_settings.app_pin row (the app now uses Supabase Auth).
 --   3. Views over these tables (none are known; handled generically):
 --      security_invoker = true and anon access revoked.
@@ -87,6 +89,34 @@ begin
     execute format('revoke all on public.%I from anon', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated, service_role', t);
   end loop;
+end $$;
+
+-- Order Up exception (TEMPORARY). Order Up reads baby_profile with the anon
+-- key to show the baby's age, and it has no sign-in yet. So baby_profile keeps
+-- ONE extra policy: anon may SELECT every row and column (insert/update/delete
+-- stay household-only). The table is a single row: id, name, due_date,
+-- birth_date, birth_weight, birth_length, notes, family_pin (unused, still
+-- holds the old Babory PIN), created_at, updated_at.
+-- TODO: Order Up must move to sign-in or a narrow function, then drop this
+-- policy and the anon grant.
+drop policy if exists baby_profile_anon_read on public.baby_profile;
+create policy baby_profile_anon_read on public.baby_profile for select to anon using (true);
+grant select on public.baby_profile to anon;
+
+-- babory_family_links is created (already locked) by 2026-10-20_kristory_setup.sql.
+-- Re-assert its lock here; this is a no-op when the setup file ran.
+do $$
+begin
+  if to_regclass('public.babory_family_links') is null then
+    raise notice 'skip: public.babory_family_links does not exist (run 2026-10-20_kristory_setup.sql)';
+    return;
+  end if;
+  alter table public.babory_family_links enable row level security;
+  drop policy if exists household_only on public.babory_family_links;
+  create policy household_only on public.babory_family_links for all to authenticated
+    using (public.is_household()) with check (public.is_household());
+  revoke all on public.babory_family_links from anon;
+  grant select, insert, update, delete on public.babory_family_links to authenticated, service_role;
 end $$;
 
 -- Sequences owned by those tables (none expected; all PKs are uuid or text).
@@ -265,7 +295,7 @@ commit;
 --       'babylist_item_states','babylist_catalog_tier_overrides','babylist_section_states')
 --   order by 1;
 --
--- anon has no table privileges left on them (expect 0 rows):
+-- anon has no table privileges left on them (expect exactly 1 row: baby_profile SELECT, the Order Up exception):
 --   select table_name, privilege_type from information_schema.role_table_grants
 --   where table_schema = 'public' and grantee = 'anon'
 --     and table_name in ('journal_entries','entry_sections','entry_photos','journal_media','tagged_items',

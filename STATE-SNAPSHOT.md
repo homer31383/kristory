@@ -9,7 +9,9 @@ No secrets, keys or PIN values appear in this file.
 > **Household lockdown, 2026-10-20 (branch `household-lockdown`).** Sections below are updated for it.
 > - Sign-in is Supabase Auth email + password (Chris and Krista; sign-ups disabled). `UserPicker`, `AppPinLock`, `useAppPin` and the Babory / shower-manager PIN gates are removed. `src/hooks/useUser.tsx` resolves the Kristory `users` row by matching the Auth account's `user_metadata.name`.
 > - `supabase/lockdown/2026-10-20_kristory.sql` (written, **not applied** at the time of writing) enables RLS with one `household_only` policy (`public.is_household()`) on 28 Kristory-owned tables, revokes anon, deletes `app_settings.app_pin`, and replaces the open storage policies on `kristory-photos` and `kristory-media` with household-only ones. Buckets stay public. Rollback: `2026-10-20_kristory_rollback.sql`.
-> - Every `api/` function verifies the caller (`api/_lib/household.ts`).
+> - Every `api/` function verifies the caller (`api/_lib/household.ts`), except `api/babory-feed.ts`, which serves the read-only Babory to holders of a private family link (hash stored in `babory_family_links`, created by `2026-10-20_kristory_setup.sql`, which must run before the deploy).
+> - `/shower` is closed: `ShowerClosed` shows a static message with no Supabase calls. `BabyShower.tsx` is kept, unrouted.
+> - Order Up exception: the lockdown keeps `baby_profile_anon_read` (anon SELECT on `baby_profile`) until Order Up moves to sign-in or a narrow function.
 
 ---
 
@@ -21,7 +23,7 @@ No secrets, keys or PIN values appear in this file.
 
 | Path | View |
 |---|---|
-| `/shower` | `BabyShower` (public) |
+| `/shower` | `ShowerClosed` (static, no Supabase calls) |
 | `/shower/m` | `ShowerManage` (household sign-in) |
 | `*` | `<Navigate to="/shower" replace>` |
 
@@ -37,9 +39,9 @@ Every other hostname gets the full route table below. `vercel.json` has no domai
 | `/photos` | `PhotoMemories` | ✅ | — |
 | `/library/river` | `LibraryRiver` | ✅ | — |
 | `/library/:categoryId/river` | `LibraryRiver` | ✅ | — |
-| `/family` | `FamilyFeed` ("The Babory") | ✅ | — |
-| `/family/photos` | `FamilyPhotos` | ✅ | — |
-| `/shower` | `BabyShower` | ❌ public (anon blocked by the lockdown SQL) | — |
+| `/family` | `FamilyFeed` ("The Babory") | ✅, or read-only with a private link `?k=` | — |
+| `/family/photos` | `FamilyPhotos` | ✅, or read-only with a private link | — |
+| `/shower` | `ShowerClosed` | ❌ public, static "This page is closed" | — |
 | `/shower/m` | `ShowerManage` | ✅ | — |
 | `/journal` | `Journal` | ✅ | ✅ |
 | `/journal/:date` | `EntryDetail` | ✅ | ✅ |
@@ -246,7 +248,9 @@ All app tables run with **RLS disabled** (no Supabase Auth; the client is truste
 
 All four are Vercel functions using the Web fetch signature (a named `export async function POST`, not `export default`). All use `@anthropic-ai/sdk` with model **`claude-sonnet-5`** (switched from Sonnet 4.6 in `df4c6c1`). None of them touch Kristory tables or Storage.
 
-**Caller check (lockdown):** each starts with `verifyHousehold(req)` from `api/_lib/household.ts`: `Authorization: Bearer <access token>` is validated at `/auth/v1/user`, then the user id is looked up in `household_members` with the service key. Plain fetch, not supabase-js, so an `sb_secret_...` key goes only in `apikey`. 401 without a valid session, 403 for non-members. Server env: `SUPABASE_URL` (or `VITE_SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY`. The browser adds the token through `apiHeaders()` in `src/lib/supabase.ts`.
+**`api/babory-feed.ts`** (`maxDuration` 15): POST `{ token }`; SHA-256 compared with `timingSafeEqual` against non-revoked `babory_family_links` rows (service key); returns `{ profile: {name, due_date, birth_date}, posts: [...] }` with shared photos (storage path + public URL), `share_to_family` clips and milestone titles. 404 with no body otherwise; `Cache-Control: no-store`.
+
+**Caller check (lockdown):** the other four each start with `verifyHousehold(req)` from `api/_lib/household.ts`: `Authorization: Bearer <access token>` is validated at `/auth/v1/user`, then the user id is looked up in `household_members` with the service key. Plain fetch, not supabase-js, so an `sb_secret_...` key goes only in `apikey`. 401 without a valid session, 403 for non-members. Server env: `SUPABASE_URL` (or `VITE_SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY`. The browser adds the token through `apiHeaders()` in `src/lib/supabase.ts`.
 
 | File | What it does | `max_tokens` | `maxDuration` (file and `vercel.json`) | Env vars |
 |---|---|---|---|---|

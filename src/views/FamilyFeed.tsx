@@ -7,7 +7,11 @@ import { getStorageUrl, truncateText } from '../lib/helpers'
 import { getMediaUrl, sortMedia } from '../lib/media'
 import MediaList from '../components/media/MediaList'
 import Lightbox, { type LightboxItem } from '../components/ui/Lightbox'
+import { useBaboryLinkFeed, LinkNotFoundError } from '../hooks/useBaboryLinkFeed'
 import type { FamilyPost, BabyProfile, BabyNameSuggestion } from '../types'
+
+/** The profile fields the Babory renders (all a link viewer receives). */
+type FeedProfile = Pick<BabyProfile, 'name' | 'due_date' | 'birth_date'>
 
 // -- Design tokens --
 const C = {
@@ -117,7 +121,7 @@ function useAddNameSuggestion() {
 
 // -- Helpers --
 
-function BabyAge({ profile }: { profile: BabyProfile }) {
+function BabyAge({ profile }: { profile: FeedProfile }) {
   const today = new Date()
 
   if (profile.birth_date) {
@@ -746,12 +750,22 @@ function NamesTab() {
 
 type FeedTab = 'updates' | 'names'
 
-function FeedContent({ profile }: { profile: BabyProfile }) {
+function FeedContent({
+  profile,
+  posts,
+  milestoneMap,
+  isLoading,
+  readOnly,
+}: {
+  profile: FeedProfile
+  posts: FamilyPost[]
+  milestoneMap: Map<string, string>
+  isLoading: boolean
+  /** Private-link viewers: no Names tab (it lets people add suggestions). */
+  readOnly: boolean
+}) {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { data, isLoading } = useFeedPosts(true)
-  const posts = data?.posts ?? []
-  const milestoneMap = data?.milestoneMap ?? new Map()
 
   const [selectedPost, setSelectedPost] = useState<FamilyPost | null>(null)
   const [activeTab, setActiveTab] = useState<FeedTab>('updates')
@@ -878,7 +892,7 @@ function FeedContent({ profile }: { profile: BabyProfile }) {
           padding: 3,
           backgroundColor: C.card,
         }}>
-          {(['updates', 'names'] as FeedTab[]).map((tab) => (
+          {((readOnly ? ['updates'] : ['updates', 'names']) as FeedTab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -904,7 +918,7 @@ function FeedContent({ profile }: { profile: BabyProfile }) {
 
       {/* Tab content */}
       <div style={{ maxWidth: 540, margin: '0 auto', padding: '12px 16px 32px' }}>
-        {activeTab === 'names' ? (
+        {activeTab === 'names' && !readOnly ? (
           <NamesTab />
         ) : isLoading ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
@@ -956,53 +970,100 @@ function FeedContent({ profile }: { profile: BabyProfile }) {
 
 // -- Root --
 
-export default function FamilyFeed() {
+function FullPageMessage({ title, message }: { title: string; message: string }) {
+  return (
+    <div style={{
+      minHeight: '100vh',
+      backgroundColor: C.bg,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontFamily: "'Inter', sans-serif",
+      textAlign: 'center',
+      padding: 24,
+    }}>
+      <div>
+        <h1 style={{
+          fontFamily: "'Playfair Display', serif",
+          fontWeight: 700,
+          fontSize: 28,
+          color: C.text,
+          margin: '0 0 12px 0',
+        }}>
+          {title}
+        </h1>
+        <p style={{ color: C.secondary, fontSize: 15 }}>{message}</p>
+      </div>
+    </div>
+  )
+}
+
+function FullPageLoading() {
+  return (
+    <div style={{
+      minHeight: '100vh',
+      backgroundColor: C.bg,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontFamily: "'Inter', sans-serif",
+    }}>
+      <p style={{ color: C.secondary, fontSize: 14 }}>Loading...</p>
+    </div>
+  )
+}
+
+/** Signed-in household members: live queries, Names tab included. */
+function HouseholdFeed() {
   const { data: profile, isLoading } = useFeedProfile()
+  const { data, isLoading: postsLoading } = useFeedPosts(true)
 
-  if (isLoading) {
+  if (isLoading) return <FullPageLoading />
+  if (!profile) return <FullPageMessage title="The Babory" message="Family feed is not set up yet." />
+  return (
+    <FeedContent
+      profile={profile}
+      posts={data?.posts ?? []}
+      milestoneMap={data?.milestoneMap ?? new Map()}
+      isLoading={postsLoading}
+      readOnly={false}
+    />
+  )
+}
+
+/** Extended family with a private link: read-only data from /api/babory-feed. */
+function LinkFeed({ token }: { token: string }) {
+  const { data, isLoading, error } = useBaboryLinkFeed(token)
+  const milestoneMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const p of data?.posts ?? []) if (p.entry_id && p.milestone) map.set(p.entry_id, p.milestone)
+    return map
+  }, [data])
+
+  if (isLoading) return <FullPageLoading />
+  if (error) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        backgroundColor: C.bg,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontFamily: "'Inter', sans-serif",
-      }}>
-        <p style={{ color: C.secondary, fontSize: 14 }}>Loading...</p>
-      </div>
+      <FullPageMessage
+        title="The Babory"
+        message={error instanceof LinkNotFoundError
+          ? 'This link is no longer active. Ask Chris or Krista for a new one.'
+          : 'The Babory could not load right now. Please try again later.'}
+      />
     )
   }
+  if (!data?.profile) return <FullPageMessage title="The Babory" message="Family feed is not set up yet." />
+  return (
+    <FeedContent
+      profile={data.profile}
+      posts={data.posts}
+      milestoneMap={milestoneMap}
+      isLoading={false}
+      readOnly
+    />
+  )
+}
 
-  if (!profile) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        backgroundColor: C.bg,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontFamily: "'Inter', sans-serif",
-        textAlign: 'center',
-        padding: 24,
-      }}>
-        <div>
-          <h1 style={{
-            fontFamily: "'Playfair Display', serif",
-            fontWeight: 700,
-            fontSize: 28,
-            color: C.text,
-            margin: '0 0 12px 0',
-          }}>
-            The Babory
-          </h1>
-          <p style={{ color: C.secondary, fontSize: 15 }}>
-            Family feed is not set up yet.
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  return <FeedContent profile={profile} />
+/** `linkToken` set: a private-link viewer (App.tsx only passes it when signed out). */
+export default function FamilyFeed({ linkToken }: { linkToken?: string | null }) {
+  return linkToken ? <LinkFeed token={linkToken} /> : <HouseholdFeed />
 }

@@ -31,16 +31,23 @@ function deny(status: number, error: string): { ok: false; response: Response } 
   }
 }
 
-function serviceHeaders(serviceKey: string): Record<string, string> {
+export function serviceHeaders(serviceKey: string): Record<string, string> {
   const headers: Record<string, string> = { apikey: serviceKey }
   // Legacy service_role keys are JWTs ("eyJ..."); new sb_secret_ keys are not.
   if (serviceKey.startsWith('eyJ')) headers.Authorization = `Bearer ${serviceKey}`
   return headers
 }
 
+/** Supabase URL and service key from the server environment ('' when unset). */
+export function supabaseServerConfig(): { supabaseUrl: string; serviceKey: string } {
+  return {
+    supabaseUrl: (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/+$/, ''),
+    serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  }
+}
+
 export async function verifyHousehold(req: Request): Promise<VerifyResult> {
-  const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/+$/, '')
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+  const { supabaseUrl, serviceKey } = supabaseServerConfig()
   if (!supabaseUrl || !serviceKey) {
     console.log('auth: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not configured')
     return deny(500, 'Server auth is not configured.')

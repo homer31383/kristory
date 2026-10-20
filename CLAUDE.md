@@ -1,10 +1,12 @@
 # The Kristory
 
 A shared daily journal PWA for Chris and Krista. Both users write their own section for each day, attach photos, audio and video, tag items across categories, keep a book/media Library, track recipes, organize trips, record baby milestones, and plan a shared baby registry. The app also exposes:
-- a separate baby feed at `/family` called **"The Babory"** (household sign-in required since the 2026-10-20 lockdown);
-- a baby-shower site at `/shower` (and a manager at `/shower/m`, sign-in required), also served on its own custom domain.
+- a separate baby feed at `/family` called **"The Babory"**: full view for the signed-in household, read-only view for extended family through a private link (`/family?k=<token>`);
+- `/shower`, now a static "This page is closed" page (also on its own custom domain), and the shower manager at `/shower/m` (sign-in required).
 
-**Household lockdown (branch `household-lockdown`, 2026-10-20).** The app signs in with Supabase Auth (email + password, Chris and Krista only, sign-ups disabled). The PIN gates and the user picker are gone. `supabase/lockdown/2026-10-20_kristory.sql` (written, applied by hand) turns RLS on for every Kristory-owned table with a single `public.is_household()` policy, revokes anon, and makes both buckets household-only for listing and writes (public object URLs still work). Rollback: `2026-10-20_kristory_rollback.sql`.
+**Household lockdown (branch `household-lockdown`, 2026-10-20).** The app signs in with Supabase Auth (email + password, Chris and Krista only, sign-ups disabled). The PIN gates and the user picker are gone. `supabase/lockdown/2026-10-20_kristory.sql` (written, applied by hand) turns RLS on for every Kristory-owned table with a single `public.is_household()` policy, revokes anon, and makes both buckets household-only for listing and writes (public object URLs still work). Rollback: `2026-10-20_kristory_rollback.sql`. Run `2026-10-20_kristory_setup.sql` (creates the locked `babory_family_links` table; rollback `..._setup_rollback.sql`) BEFORE deploying the lockdown build.
+
+**TODO:** Order Up must move to sign-in or a narrow function, then drop the anon select policy on baby_profile (`baby_profile_anon_read`, plus the anon SELECT grant, both added by the lockdown SQL).
 
 **`STATE-SNAPSHOT.md`** (2026-10-17) is the code-verified reference for the full schema, every route, features, storage, and backup gaps. Keep it in sync when you change any of those.
 
@@ -130,6 +132,7 @@ All migrations through `032` are applied in production (probed 2026-10-17).
 | `baby_name_suggestions` | Names suggested via the family feed |
 | `family_posts` | Baby updates shared to the family feed |
 | `family_post_photos` | Which entry photos are visible in each family post |
+| `babory_family_links` | SHA-256 hashes of private Babory links (`token_hash`, `created_at`, `revoked_at`). Created locked by `supabase/lockdown/2026-10-20_kristory_setup.sql` |
 | `app_settings` | Key-value store: app_pin, last_backup_date, backup_reminder, backup_frequency, shower_guest_count |
 | `baby_shower_event` | Single row: date/time/location/description/registry links + background presentation settings (007, 013–014, 023–027) |
 | `baby_shower_guests` | Guest list, RSVP, plus-one, dietary, side L/B, invite/gift/thank-you tracking, jsonb address (007–008, 011, 015) |
@@ -167,14 +170,16 @@ All migrations through `032` are applied in production (probed 2026-10-17).
 | `/baby` | `Baby` | Timeline / Milestones / Firsts / Names tabs, family share card |
 | `/registry` | `Registry` | Shared baby registry (Chris & Krista only, realtime) |
 | `/settings` | `Settings` | All settings + Backup & Restore |
-| `/family` | `FamilyFeed` | **"The Babory"** branding, no Kristory chrome; household sign-in |
-| `/family/photos` | `FamilyPhotos` | Babory photo gallery; household sign-in |
-| `/shower` | `BabyShower` | Shower page: RSVP, photo upload, calendar. No sign-in gate, but after the lockdown SQL anon can't read or write the shower tables or upload photos |
+| `/family` | `FamilyFeed` | **"The Babory"** branding, no Kristory chrome; household sign-in, or read-only with a private link (`?k=`) |
+| `/family/photos` | `FamilyPhotos` | Babory photo gallery; same access as `/family` |
+| `/shower` | `ShowerClosed` | Static "This page is closed". No Supabase calls. `BabyShower.tsx` is kept but unrouted |
 | `/shower/m` | `ShowerManage` | Shower manager; household sign-in |
 
-Every route except `/shower` is wrapped in `RequireAuth` (`src/components/RequireAuth.tsx`), which shows the sign-in screen (titled "The Babory" / "Shower Manager" on those routes) until a household member is signed in. Sign out is in Settings > Account; it removes all realtime channels and clears the React Query cache. The family routes still never query journal entries directly. `baby_profile.family_pin` still exists in the database but nothing reads it.
+Every route except `/shower` and link-holder visits to `/family` is wrapped in `RequireAuth` (`src/components/RequireAuth.tsx`), which shows the sign-in screen (titled "The Babory" / "Shower Manager" on those routes) until a household member is signed in. Sign out is in Settings > Account; it removes all realtime channels and clears the React Query cache. The family routes still never query journal entries directly. `baby_profile.family_pin` still exists in the database but nothing reads it.
 
-**Custom domain:** on any hostname ending in `leahybernierbabyshower.com`, `App.tsx` serves only `/shower` and `/shower/m`; every other path redirects to `/shower`.
+**Babory family links.** The household creates, replaces or turns off one private link in Settings > Family Feed or Baby > Share with Family (`FamilyLinkControls`). The client makes a 32-byte random token (base64url), stores only its SHA-256 hex in `babory_family_links`, and shows the full link once. `/family?k=<token>` (the token is remembered in sessionStorage `kristory-babory-link`) loads the feed from `api/babory-feed.ts`, which compares the hash in constant time with the non-revoked rows using the service key and returns only the baby's name and dates plus the family posts, shared photos (public URLs), shared clips and milestone titles. Unknown or revoked tokens get a bare 404. Link viewers have no Names tab and no writes. Signed-in household members always get the full feed.
+
+**Custom domain:** on any hostname ending in `leahybernierbabyshower.com`, `App.tsx` serves only `/shower` (the closed page) and `/shower/m`; every other path redirects to `/shower`.
 
 ## Architecture Patterns
 
@@ -208,7 +213,7 @@ The bucket's storage policies are not in any migration.
 
 All use `claude-sonnet-5`, need `ANTHROPIC_API_KEY`, and have `maxDuration` 60/60/60/30 respectively.
 
-Every function starts with `verifyHousehold(req)` from `api/_lib/household.ts` (import it as `./_lib/household.js`). It reads `Authorization: Bearer <access token>`, validates it at `/auth/v1/user`, then looks the user up in `household_members` with `SUPABASE_SERVICE_ROLE_KEY`. It uses plain fetch, not supabase-js (2.98 would send a key as Bearer), so an `sb_secret_...` key only ever goes in the `apikey` header; legacy JWT keys also get a Bearer header. Needs `SUPABASE_URL` (or `VITE_SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY` on Vercel. Browser callers build headers with `apiHeaders()` from `src/lib/supabase.ts`.
+`babory-feed` (private family link feed, `maxDuration` 15) is the only function that doesn't need a session; the link token is its credential. Every other function starts with `verifyHousehold(req)` from `api/_lib/household.ts` (import it as `./_lib/household.js`). It reads `Authorization: Bearer <access token>`, validates it at `/auth/v1/user`, then looks the user up in `household_members` with `SUPABASE_SERVICE_ROLE_KEY`. It uses plain fetch, not supabase-js (2.98 would send a key as Bearer), so an `sb_secret_...` key only ever goes in the `apikey` header; legacy JWT keys also get a Bearer header. Needs `SUPABASE_URL` (or `VITE_SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY` on Vercel. Browser callers build headers with `apiHeaders()` from `src/lib/supabase.ts`.
 
 ### Registry
 `/registry` (`src/registry/`) uses a single hard-coded `REGISTRY_ID`. Identity is resolved through `babylist_people.kristory_user_id`. Live sync uses the realtime channel `registry:{id}` plus a presence channel. The Chrome extension pairs through `babylist_extension_tokens`.
