@@ -24,7 +24,7 @@ export default function FamilyPinScreen() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!pin || unlock.isPending) return
+    if (pin.length !== 4 || unlock.isPending) return
     setWrong(false)
     let ok = false
     try {
@@ -66,10 +66,11 @@ export default function FamilyPinScreen() {
           <input
             type="password"
             inputMode="numeric"
-            pattern="[0-9]*"
+            pattern="[0-9]{4}"
+            maxLength={4}
             autoComplete="off"
             value={pin}
-            onChange={(e) => { setPin(e.target.value.replace(/\D/g, '')); setWrong(false) }}
+            onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 4)); setWrong(false) }}
             placeholder="Enter PIN"
             aria-label="Family PIN"
             autoFocus
@@ -94,7 +95,7 @@ export default function FamilyPinScreen() {
           )}
           <button
             type="submit"
-            disabled={!pin || unlock.isPending}
+            disabled={pin.length !== 4 || unlock.isPending}
             style={{
               width: '100%',
               marginTop: 16,
@@ -106,7 +107,7 @@ export default function FamilyPinScreen() {
               border: 'none',
               borderRadius: 12,
               cursor: 'pointer',
-              opacity: !pin || unlock.isPending ? 0.6 : 1,
+              opacity: pin.length !== 4 || unlock.isPending ? 0.6 : 1,
             }}
           >
             {unlock.isPending ? 'Checking...' : 'Enter'}

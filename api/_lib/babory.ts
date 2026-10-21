@@ -19,14 +19,41 @@ export const DEVICE_COOKIE = 'babory_device'
 export const SESSION_MAX_AGE = 30 * 24 * 60 * 60 // 30 days
 const DEVICE_MAX_AGE = 365 * 24 * 60 * 60
 
-export const PIN_RE = /^\d{6,32}$/
+/** The family PIN is exactly 4 digits. */
+export const PIN_RE = /^\d{4}$/
 
-/** Limits. Device and IP: 5 wrong tries in 15 min lock that key for 15 min. Global: >30 in an hour locks the page for an hour. */
-export const LIMITS = {
-  device: { max: 5, window: '15 minutes', lock: '15 minutes' },
-  global: { max: 31, window: '1 hour', lock: '1 hour' },
-} as const
+/**
+ * Lock limits live in SQL (babory_register_failure): IP key and device key,
+ * 5 wrong tries in 15 min -> 15 min lock; '*global*', more than 30 wrong tries
+ * in an hour -> 1 hour lock.
+ */
 export const GLOBAL_KEY = '*global*'
+
+/**
+ * PINs too easy to guess, rejected when the household sets one (mirrored in
+ * src/components/FamilyPinControls.tsx for the message only; this is the
+ * authority):
+ *   - all one digit: 0000, 1111, ... 9999
+ *   - runs by 1: 0123 1234 2345 3456 4567 5678 6789 and 3210 ... 9876,
+ *     plus the keypad-row wraps 7890 and 0987
+ *   - the baby's birthday as MMDD or DDMM (birth_date; due_date if there is
+ *     no birth_date yet)
+ */
+export function isWeakPin(pin: string, birthDate: string | null, dueDate: string | null): boolean {
+  if (/^(\d)\1{3}$/.test(pin)) return true
+  const runs = '0123456789'
+  const sequences = new Set<string>(['7890', '0987'])
+  for (let i = 0; i + 4 <= runs.length; i++) {
+    const up = runs.slice(i, i + 4)
+    sequences.add(up)
+    sequences.add([...up].reverse().join(''))
+  }
+  if (sequences.has(pin)) return true
+  const date = birthDate || dueDate
+  const m = date ? /^\d{4}-(\d{2})-(\d{2})/.exec(date) : null
+  if (m && (pin === m[1] + m[2] || pin === m[2] + m[1])) return true
+  return false
+}
 
 export const NO_STORE = { 'cache-control': 'no-store', 'x-robots-tag': 'noindex' } as const
 

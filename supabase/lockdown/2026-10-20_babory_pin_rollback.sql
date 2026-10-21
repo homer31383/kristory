@@ -17,10 +17,12 @@ begin
 end $$;
 
 drop function if exists public.babory_attempts_locked(text[]);
+drop function if exists public.babory_register_failure(text, text);
 drop function if exists public.babory_attempt_failed(text, int, interval, interval);
 drop function if exists public.babory_attempts_clear(text[]);
 drop function if exists public.babory_set_pin(text, text, uuid);
 
+drop table if exists public.babory_family_lockouts;
 drop table if exists public.babory_family_attempts;
 drop table if exists public.babory_family_pin;
 
@@ -45,7 +47,8 @@ notify pgrst, 'reload schema';
 commit;
 
 -- Verification (read-only):
---   select to_regclass('public.babory_family_pin'), to_regclass('public.babory_family_attempts');  -- null, null
+--   select to_regclass('public.babory_family_pin'), to_regclass('public.babory_family_attempts'),
+--          to_regclass('public.babory_family_lockouts');                                           -- null x3
 --   select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
 --   where n.nspname = 'public' and p.proname like 'babory\_%';                                   -- 0
 --   select relrowsecurity from pg_class where oid = 'public.babory_family_links'::regclass;      -- true

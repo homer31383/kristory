@@ -1,6 +1,5 @@
 import {
   GLOBAL_KEY,
-  LIMITS,
   PIN_RE,
   clientIp,
   deviceId,
@@ -19,7 +18,7 @@ import {
  * 1. Lock check FIRST: the IP key, the device key or the global key locked
  *    means "Wrong PIN" without even looking at the PIN.
  * 2. scrypt + timingSafeEqual against babory_family_pin.
- * 3. Wrong: +1 on the IP, device and global counters (atomic SQL functions).
+ * 3. Wrong: +1 on the IP, device and global counters (babory_register_failure).
  *    Right: clear the IP and device counters, set the 30-day session cookie.
  *
  * Every failure (wrong PIN, malformed PIN, no PIN set, locked out) gets the
@@ -63,13 +62,9 @@ export async function POST(req: Request): Promise<Response> {
     const ok = !!row && PIN_RE.test(pin) && (await pinMatches(pin, row.pin_hash, row.salt))
 
     if (!ok || !row) {
-      // 3a. Count the failure everywhere. Sequential so a failure to count is
-      // never silently ignored.
-      const d = LIMITS.device
-      const g = LIMITS.global
-      await db.rpc('babory_attempt_failed', { p_key: ipKey, p_max: d.max, p_window: d.window, p_lock: d.lock })
-      await db.rpc('babory_attempt_failed', { p_key: devKey, p_max: d.max, p_window: d.window, p_lock: d.lock })
-      await db.rpc('babory_attempt_failed', { p_key: GLOBAL_KEY, p_max: g.max, p_window: g.window, p_lock: g.lock })
+      // 3a. Count the failure on the IP, device and global counters in one
+      // atomic call; it also records one lockout event per new lockout.
+      await db.rpc('babory_register_failure', { p_ip_key: ipKey, p_dev_key: devKey })
       return wrong()
     }
 

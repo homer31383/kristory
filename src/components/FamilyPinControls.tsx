@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { format } from 'date-fns'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiHeaders } from '../lib/supabase'
+import { useBabyProfile } from '../hooks/useBaby'
 
 /**
  * Household controls for the Babory family PIN (Settings > Family Feed).
@@ -12,6 +13,28 @@ import { apiHeaders } from '../lib/supabase'
 interface PinStatus {
   set: boolean
   updated_at: string | null
+  /** Lockouts in the last 7 days. */
+  lockouts?: { device: number; global: number }
+}
+
+/**
+ * Mirror of isWeakPin in api/_lib/babory.ts, only for a friendly message;
+ * the server decides. Same digit x4, runs by 1 (plus 7890 / 0987), or the
+ * baby's birthday (due date if no birth date) as MMDD or DDMM.
+ */
+function looksWeak(pin: string, birthDate: string | null | undefined, dueDate: string | null | undefined): boolean {
+  if (/^(\d)\1{3}$/.test(pin)) return true
+  const runs = '0123456789'
+  const sequences = new Set<string>(['7890', '0987'])
+  for (let i = 0; i + 4 <= runs.length; i++) {
+    const up = runs.slice(i, i + 4)
+    sequences.add(up)
+    sequences.add([...up].reverse().join(''))
+  }
+  if (sequences.has(pin)) return true
+  const date = birthDate || dueDate
+  const m = date ? /^\d{4}-(\d{2})-(\d{2})/.exec(date) : null
+  return !!m && (pin === m[1] + m[2] || pin === m[2] + m[1])
 }
 
 async function readError(res: Response, fallback: string): Promise<string> {
@@ -55,6 +78,7 @@ const inputStyle = {
 
 export default function FamilyPinControls() {
   const { data: status, isLoading, error: loadError } = usePinStatus()
+  const { data: babyProfile } = useBabyProfile()
   const savePin = useSavePin()
   const [editing, setEditing] = useState(false)
   const [pin, setPin] = useState('')
@@ -70,12 +94,16 @@ export default function FamilyPinControls() {
   }
 
   const handleSave = async () => {
-    if (!/^\d{6,32}$/.test(pin)) {
-      setError('Use 6 or more digits (numbers only).')
+    if (!/^\d{4}$/.test(pin)) {
+      setError('The PIN must be exactly 4 digits.')
       return
     }
     if (pin !== confirmPin) {
       setError('The PINs do not match.')
+      return
+    }
+    if (looksWeak(pin, babyProfile?.birth_date, babyProfile?.due_date)) {
+      setError('That PIN is too easy to guess. Please choose another.')
       return
     }
     try {
@@ -107,8 +135,14 @@ export default function FamilyPinControls() {
                 : 'No PIN set. Family can’t open the Babory yet.'}
           {saved && <span style={{ color: '#4A9D5A' }}> · Saved</span>}
         </div>
+        {status?.lockouts && (
+          <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+            Last 7 days: {status.lockouts.device} device lockout{status.lockouts.device === 1 ? '' : 's'},{' '}
+            {status.lockouts.global} page lockout{status.lockouts.global === 1 ? '' : 's'}
+          </div>
+        )}
         <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-          Family open {window.location.origin}/family and enter this PIN. Changing it signs every family device out.
+          Family open {window.location.origin}/family and enter this 4-digit PIN. Changing it signs every family device out.
         </div>
       </div>
 
@@ -118,9 +152,10 @@ export default function FamilyPinControls() {
             type="password"
             inputMode="numeric"
             autoComplete="new-password"
+            maxLength={4}
             value={pin}
-            onChange={(e) => { setPin(e.target.value.replace(/\D/g, '')); setError(null) }}
-            placeholder="New PIN (6+ digits)"
+            onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 4)); setError(null) }}
+            placeholder="New 4-digit PIN"
             autoFocus
             className="w-full rounded-lg border p-2.5 text-sm"
             style={inputStyle}
@@ -129,8 +164,9 @@ export default function FamilyPinControls() {
             type="password"
             inputMode="numeric"
             autoComplete="new-password"
+            maxLength={4}
             value={confirmPin}
-            onChange={(e) => { setConfirmPin(e.target.value.replace(/\D/g, '')); setError(null) }}
+            onChange={(e) => { setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 4)); setError(null) }}
             placeholder="Confirm PIN"
             className="w-full rounded-lg border p-2.5 text-sm"
             style={inputStyle}

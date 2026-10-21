@@ -23,13 +23,29 @@
 --                           one set of atomic functions for every counter; the
 --                           '*global*' key can never collide with an HMAC key
 --                           because those always carry a prefix.
---   Functions (security definer, execute for service_role only):
+--   babory_family_lockouts  one row per NEW lockout ('device' or 'global'),
+--                           kept 7 days, for the counts in Settings.
+--   Functions (security definer):
 --     babory_attempts_locked(keys)        true if any key is locked now
---     babory_attempt_failed(key, max, window, lock)
---                                         atomic +1 in the current window; locks
---                                         the key when failures reach `max`
+--     babory_register_failure(ip, dev)    one wrong PIN: +1 on the IP, device
+--                                         and global counters, plus lockout
+--                                         events (see below)
 --     babory_attempts_clear(keys)         delete counters (after a right PIN)
 --     babory_set_pin(hash, salt, by)      atomic upsert; version + 1 on change
+--     babory_attempt_failed(...)          internal helper, NOT executable by
+--                                         service_role (owner only)
+--   Limits live in babory_register_failure: IP key and device key 5 wrong in
+--   15 min -> 15 min lock; '*global*' 31 wrong (i.e. more than 30) in 1 hour
+--   -> 1 hour lock.
+--
+--   One event per lockout: a wrong PIN counts against both the IP key and the
+--   device key, and either (or both) may lock on the same try. The helper
+--   returns true only when ITS key goes from unlocked to locked (each key is
+--   serialized with an advisory lock), and babory_register_failure inserts a
+--   single 'device' row if the IP key OR the device key newly locked, and one
+--   'global' row if the global key newly locked. Requests made while already
+--   locked never get here (the unlock route checks locks first), and an
+--   existing lock is never "new" anyway.
 --
 -- Also drops babory_family_links (the link feature is removed).
 -- ════════════════════════════════════════════════════════════════════════════
@@ -61,14 +77,26 @@ create table if not exists public.babory_family_attempts (
   locked_until timestamptz
 );
 
+create table if not exists public.babory_family_lockouts (
+  id bigint generated always as identity primary key,
+  kind text not null check (kind in ('device', 'global')),
+  created_at timestamptz not null default now()
+);
+create index if not exists babory_family_lockouts_created_at_idx on public.babory_family_lockouts (created_at);
+
 alter table public.babory_family_pin enable row level security;
 alter table public.babory_family_attempts enable row level security;
+alter table public.babory_family_lockouts enable row level security;
 -- No policies on purpose: only service_role (which bypasses RLS) may touch them.
 
 revoke all on public.babory_family_pin from anon, authenticated;
 revoke all on public.babory_family_attempts from anon, authenticated;
+revoke all on public.babory_family_lockouts from anon, authenticated;
 grant select, insert, update, delete on public.babory_family_pin to service_role;
 grant select, insert, update, delete on public.babory_family_attempts to service_role;
+grant select, insert, update, delete on public.babory_family_lockouts to service_role;
+revoke all on sequence public.babory_family_lockouts_id_seq from anon, authenticated;
+grant usage, select on sequence public.babory_family_lockouts_id_seq to service_role;
 
 -- ─── Functions ──────────────────────────────────────────────────────────────
 create or replace function public.babory_attempts_locked(p_keys text[])
@@ -86,14 +114,20 @@ $$;
 create or replace function public.babory_attempt_failed(
   p_key text, p_max int, p_window interval, p_lock interval
 )
-returns void
+returns boolean
 language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
+declare
+  v_prev timestamptz;
+  v_new timestamptz;
 begin
-  -- One statement, so concurrent failures can't lose a count. A counter whose
-  -- window has passed, or whose lock has run out, starts again at 1.
+  -- Serialize per key so "newly locked" is decided exactly once.
+  perform pg_advisory_xact_lock(hashtext('babory_attempt:' || p_key));
+  select locked_until into v_prev from public.babory_family_attempts where ip_hash = p_key;
+
+  -- A counter whose window has passed, or whose lock has run out, starts again at 1.
   insert into public.babory_family_attempts as a (ip_hash, failures, window_start, locked_until)
   values (p_key, 1, now(), case when p_max <= 1 then now() + p_lock end)
   on conflict (ip_hash) do update set
@@ -112,7 +146,40 @@ begin
               else a.failures + 1
             end) >= p_max then now() + p_lock
       else null
-    end;
+    end
+  returning locked_until into v_new;
+
+  -- True only on the transition unlocked -> locked.
+  return (v_prev is null or v_prev <= now()) and v_new is not null and v_new > now();
+end;
+$$;
+
+create or replace function public.babory_register_failure(p_ip_key text, p_dev_key text)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_ip boolean;
+  v_dev boolean;
+  v_global boolean;
+begin
+  v_ip := public.babory_attempt_failed(p_ip_key, 5, interval '15 minutes', interval '15 minutes');
+  v_dev := public.babory_attempt_failed(p_dev_key, 5, interval '15 minutes', interval '15 minutes');
+  v_global := public.babory_attempt_failed('*global*', 31, interval '1 hour', interval '1 hour');
+
+  -- One person locking out = one 'device' event, even if both their IP key
+  -- and their device key locked on this try.
+  if v_ip or v_dev then
+    insert into public.babory_family_lockouts (kind) values ('device');
+  end if;
+  if v_global then
+    insert into public.babory_family_lockouts (kind) values ('global');
+  end if;
+
+  -- Keep 7 days of events.
+  delete from public.babory_family_lockouts where created_at < now() - interval '7 days';
 end;
 $$;
 
@@ -143,11 +210,12 @@ as $$
 $$;
 
 revoke execute on function public.babory_attempts_locked(text[]) from public, anon, authenticated;
-revoke execute on function public.babory_attempt_failed(text, int, interval, interval) from public, anon, authenticated;
+revoke execute on function public.babory_attempt_failed(text, int, interval, interval) from public, anon, authenticated, service_role;
+revoke execute on function public.babory_register_failure(text, text) from public, anon, authenticated;
 revoke execute on function public.babory_attempts_clear(text[]) from public, anon, authenticated;
 revoke execute on function public.babory_set_pin(text, text, uuid) from public, anon, authenticated;
 grant execute on function public.babory_attempts_locked(text[]) to service_role;
-grant execute on function public.babory_attempt_failed(text, int, interval, interval) to service_role;
+grant execute on function public.babory_register_failure(text, text) to service_role;
 grant execute on function public.babory_attempts_clear(text[]) to service_role;
 grant execute on function public.babory_set_pin(text, text, uuid) to service_role;
 
@@ -162,18 +230,20 @@ commit;
 -- Verification (read-only)
 -- ════════════════════════════════════════════════════════════════════════════
 --
--- RLS on, no policies (expect true/true and 0 policies):
+-- RLS on, no policies (expect three trues and 0 policies):
 --   select relname, relrowsecurity from pg_class
---   where oid in ('public.babory_family_pin'::regclass, 'public.babory_family_attempts'::regclass);
+--   where oid in ('public.babory_family_pin'::regclass, 'public.babory_family_attempts'::regclass,
+--                 'public.babory_family_lockouts'::regclass);
 --   select count(*) from pg_policies where schemaname = 'public'
---     and tablename in ('babory_family_pin', 'babory_family_attempts');
+--     and tablename in ('babory_family_pin', 'babory_family_attempts', 'babory_family_lockouts');
 --
 -- Only service_role has table grants (expect only service_role rows):
 --   select table_name, grantee, privilege_type from information_schema.role_table_grants
---   where table_schema = 'public' and table_name in ('babory_family_pin', 'babory_family_attempts')
+--   where table_schema = 'public' and table_name in ('babory_family_pin', 'babory_family_attempts', 'babory_family_lockouts')
 --   order by 1, 2, 3;
 --
--- Functions: only service_role (and the owner) may execute (expect anon/authenticated false):
+-- Functions: only service_role (and the owner) may execute (expect anon/authenticated false;
+-- babory_attempt_failed is false for service_role too, it is internal):
 --   select p.proname,
 --          has_function_privilege('anon', p.oid, 'execute') as anon,
 --          has_function_privilege('authenticated', p.oid, 'execute') as authenticated,
@@ -187,6 +257,10 @@ commit;
 --
 -- PIN status without revealing it (expect 0 rows until the household sets one):
 --   select version, updated_at from public.babory_family_pin;
+--
+-- Lockouts in the last 7 days (what Settings shows):
+--   select kind, count(*) from public.babory_family_lockouts
+--   where created_at > now() - interval '7 days' group by kind;
 --
 -- Current lockouts:
 --   select ip_hash = '*global*' as is_global, failures, window_start, locked_until
