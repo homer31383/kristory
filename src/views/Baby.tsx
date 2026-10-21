@@ -14,7 +14,6 @@ import {
 } from '../hooks/useBaby'
 import { useFamilyPostIds, useCreateFamilyPost } from '../hooks/useFamilyFeed'
 import BottomSheet from '../components/ui/BottomSheet'
-import FamilyLinkControls from '../components/FamilyLinkControls'
 import { useBabyNameSuggestions, useDeleteBabyName } from '../hooks/useBabyNames'
 import { useUser } from '../hooks/useUser'
 import { getStorageUrl, truncateText } from '../lib/helpers'
@@ -324,7 +323,7 @@ export default function Baby() {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Family Feed</div>
-                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Shared through a private link</div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Family sign in with the family PIN</div>
               </div>
             </div>
             <button
@@ -340,7 +339,27 @@ export default function Baby() {
               onClose={() => setShowShareSheet(false)}
               title="Share Family Feed"
             >
-              <FamilyLinkControls />
+              <div className="space-y-3">
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  Send family the link below and tell them the family PIN (in person or by phone is safest).
+                  Set or change the PIN in Settings &gt; Family Feed; changing it signs every family device out.
+                </p>
+                <div
+                  className="rounded-lg border p-3 flex items-center gap-2"
+                  style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+                >
+                  <code className="text-xs flex-1 truncate" style={{ color: 'var(--text-primary)' }}>
+                    {window.location.origin}/family
+                  </code>
+                  <button
+                    onClick={() => { void navigator.clipboard.writeText(`${window.location.origin}/family`) }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-white cursor-pointer"
+                    style={{ backgroundColor: 'var(--accent)' }}
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
             </BottomSheet>
           </div>
         )

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { UserProvider, useUser } from './hooks/useUser'
@@ -25,7 +25,6 @@ import FamilyPhotos from './views/FamilyPhotos'
 import PhotoMemories from './views/PhotoMemories'
 import LibraryRiver from './views/LibraryRiver'
 import ClosedPage from './views/ClosedPage'
-import { getFamilyLinkToken } from './lib/baboryLink'
 import ShowerManage from './views/ShowerManage'
 
 const queryClient = new QueryClient({
@@ -48,14 +47,13 @@ function ClearCacheOnSignOut() {
   return null
 }
 
-// The Babory: signed-in household members get the full feed. Someone who is
-// signed out but holds a private family link (/family#k=...) gets the
-// read-only feed from /api/babory-feed instead of the sign-in screen.
+// The Babory: signed-in household members get the full feed. When nobody is
+// signed in, extended family get the family PIN screen and then the read-only
+// feed from /api/babory-feed (session in an httpOnly cookie).
 function FamilyRoute({ photos = false }: { photos?: boolean }) {
   const { status } = useUser()
-  const [linkToken] = useState(getFamilyLinkToken)
-  if (linkToken && status === 'signed-out') {
-    return photos ? <FamilyPhotos linkToken={linkToken} /> : <FamilyFeed linkToken={linkToken} />
+  if (status === 'signed-out') {
+    return photos ? <FamilyPhotos familyView /> : <FamilyFeed familyView />
   }
   return <RequireAuth title="The Babory">{photos ? <FamilyPhotos /> : <FamilyFeed />}</RequireAuth>
 }

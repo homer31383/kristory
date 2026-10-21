@@ -7,7 +7,8 @@ import { getStorageUrl, truncateText } from '../lib/helpers'
 import { getMediaUrl, sortMedia } from '../lib/media'
 import MediaList from '../components/media/MediaList'
 import Lightbox, { type LightboxItem } from '../components/ui/Lightbox'
-import { useBaboryLinkFeed, LinkNotFoundError } from '../hooks/useBaboryLinkFeed'
+import { useBaboryFamilyFeed, useFamilySignOut, FamilyPinRequiredError } from '../hooks/useBaboryFamilyFeed'
+import FamilyPinScreen from '../components/FamilyPinScreen'
 import type { FamilyPost, BabyProfile, BabyNameSuggestion } from '../types'
 
 /** The profile fields the Babory renders (all a link viewer receives). */
@@ -756,13 +757,16 @@ function FeedContent({
   milestoneMap,
   isLoading,
   readOnly,
+  onSignOut,
 }: {
   profile: FeedProfile
   posts: FamilyPost[]
   milestoneMap: Map<string, string>
   isLoading: boolean
-  /** Private-link viewers: no Names tab (it lets people add suggestions). */
+  /** Family PIN viewers: no Names tab (it lets people add suggestions). */
   readOnly: boolean
+  /** Family PIN viewers: forget this device's family session. */
+  onSignOut?: () => void
 }) {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -956,6 +960,24 @@ function FeedContent({
             ))}
           </div>
         )}
+
+        {onSignOut && (
+          <div style={{ textAlign: 'center', marginTop: 32 }}>
+            <button
+              onClick={onSignOut}
+              style={{
+                border: 'none',
+                background: 'none',
+                color: C.muted,
+                fontSize: 12,
+                cursor: 'pointer',
+                fontFamily: "'Inter', sans-serif",
+              }}
+            >
+              Sign out of The Babory on this device
+            </button>
+          </div>
+        )}
       </div>
 
       <style>{`
@@ -1031,9 +1053,10 @@ function HouseholdFeed() {
   )
 }
 
-/** Extended family with a private link: read-only data from /api/babory-feed. */
-function LinkFeed({ token }: { token: string }) {
-  const { data, isLoading, error } = useBaboryLinkFeed(token)
+/** Extended family with the family PIN: read-only data from /api/babory-feed. */
+function PinFeed() {
+  const { data, isLoading, error } = useBaboryFamilyFeed()
+  const signOut = useFamilySignOut()
   const milestoneMap = useMemo(() => {
     const map = new Map<string, string>()
     for (const p of data?.posts ?? []) if (p.entry_id && p.milestone) map.set(p.entry_id, p.milestone)
@@ -1041,15 +1064,9 @@ function LinkFeed({ token }: { token: string }) {
   }, [data])
 
   if (isLoading) return <FullPageLoading />
+  if (error instanceof FamilyPinRequiredError) return <FamilyPinScreen />
   if (error) {
-    return (
-      <FullPageMessage
-        title="The Babory"
-        message={error instanceof LinkNotFoundError
-          ? 'This link is no longer active. Ask Chris or Krista for a new one.'
-          : 'The Babory could not load right now. Please try again later.'}
-      />
-    )
+    return <FullPageMessage title="The Babory" message="The Babory could not load right now. Please try again later." />
   }
   if (!data?.profile) return <FullPageMessage title="The Babory" message="Family feed is not set up yet." />
   return (
@@ -1059,11 +1076,15 @@ function LinkFeed({ token }: { token: string }) {
       milestoneMap={milestoneMap}
       isLoading={false}
       readOnly
+      onSignOut={() => signOut.mutate()}
     />
   )
 }
 
-/** `linkToken` set: a private-link viewer (App.tsx only passes it when signed out). */
-export default function FamilyFeed({ linkToken }: { linkToken?: string | null }) {
-  return linkToken ? <LinkFeed token={linkToken} /> : <HouseholdFeed />
+/**
+ * `familyView`: extended family (App.tsx sets it only when nobody is signed
+ * in): PIN screen, then the read-only feed. Otherwise the household feed.
+ */
+export default function FamilyFeed({ familyView = false }: { familyView?: boolean }) {
+  return familyView ? <PinFeed /> : <HouseholdFeed />
 }

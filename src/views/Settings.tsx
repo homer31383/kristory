@@ -11,7 +11,7 @@ import { createFullBackup, estimateBackupSize, type BackupProgress } from '../li
 import { exportJSON, exportPDF } from '../lib/export'
 import ImportJournal from '../components/ImportJournal'
 import ImportRecipes from '../components/ImportRecipes'
-import FamilyLinkControls from '../components/FamilyLinkControls'
+import FamilyPinControls from '../components/FamilyPinControls'
 import type { ThemeMode, Category } from '../types'
 
 export default function Settings() {
@@ -495,7 +495,7 @@ export default function Settings() {
       {babyProfile && (
         <Section title="Family Feed">
           <div className="space-y-3">
-            <FamilyLinkControls />
+            <FamilyPinControls />
 
             {/* View feed */}
             <a

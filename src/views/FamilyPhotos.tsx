@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query'
 import { format, parse } from 'date-fns'
 import { supabase } from '../lib/supabase'
 import { getStorageUrl } from '../lib/helpers'
-import { useBaboryLinkFeed } from '../hooks/useBaboryLinkFeed'
+import { useBaboryFamilyFeed, FamilyPinRequiredError } from '../hooks/useBaboryFamilyFeed'
+import FamilyPinScreen from '../components/FamilyPinScreen'
 
 const PAGE_SIZE = 24
 
@@ -57,14 +58,14 @@ function shuffle<T>(input: T[]): T[] {
   return arr
 }
 
-/** `linkToken` set: a private-link viewer (App.tsx only passes it when signed out). */
-export default function FamilyPhotos({ linkToken }: { linkToken?: string | null }) {
+/** `familyView`: extended family behind the PIN (App.tsx sets it only when nobody is signed in). */
+export default function FamilyPhotos({ familyView = false }: { familyView?: boolean }) {
   const navigate = useNavigate()
-  const household = useFamilyPhotos(!linkToken)
-  const linkFeed = useBaboryLinkFeed(linkToken ?? null)
-  const linkPhotos = useMemo<FamilyPhoto[] | undefined>(
+  const household = useFamilyPhotos(!familyView)
+  const familyFeed = useBaboryFamilyFeed(familyView)
+  const familyPhotos = useMemo<FamilyPhoto[] | undefined>(
     () =>
-      linkFeed.data?.posts.flatMap((post) =>
+      familyFeed.data?.posts.flatMap((post) =>
         (post.photos ?? [])
           .filter((ph) => ph.entry_photo?.storage_path)
           .map((ph) => ({
@@ -74,10 +75,11 @@ export default function FamilyPhotos({ linkToken }: { linkToken?: string | null 
             published_at: post.published_at,
           })),
       ),
-    [linkFeed.data],
+    [familyFeed.data],
   )
-  const data = linkToken ? linkPhotos : household.data
-  const isLoading = linkToken ? linkFeed.isLoading : household.isLoading
+  const data = familyView ? familyPhotos : household.data
+  const isLoading = familyView ? familyFeed.isLoading : household.isLoading
+  const needsPin = familyView && familyFeed.error instanceof FamilyPinRequiredError
 
   // A nonce generated once per mount — combined with the data identity it
   // guarantees a fresh shuffle every time the page is opened.
@@ -112,6 +114,8 @@ export default function FamilyPhotos({ linkToken }: { linkToken?: string | null 
   }, [shuffled.length])
 
   const visible = shuffled.slice(0, visibleCount)
+
+  if (needsPin) return <FamilyPinScreen />
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#FFF8E7' }}>

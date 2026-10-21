@@ -9,7 +9,7 @@ No secrets, keys or PIN values appear in this file.
 > **Household lockdown, 2026-10-20 (branch `household-lockdown`).** Sections below are updated for it.
 > - Sign-in is Supabase Auth email + password (Chris and Krista; sign-ups disabled). `UserPicker`, `AppPinLock`, `useAppPin` and the Babory / shower-manager PIN gates are removed. `src/hooks/useUser.tsx` resolves the Kristory `users` row by matching the Auth account's `user_metadata.name`.
 > - `supabase/lockdown/2026-10-20_kristory.sql` (written, **not applied** at the time of writing) enables RLS with one `household_only` policy (`public.is_household()`) on 28 Kristory-owned tables, revokes anon, deletes `app_settings.app_pin`, and replaces the open storage policies on `kristory-photos` and `kristory-media` with household-only ones. Buckets stay public. Rollback: `2026-10-20_kristory_rollback.sql`.
-> - Every `api/` function verifies the caller (`api/_lib/household.ts`), except `api/babory-feed.ts`, which serves the read-only Babory to holders of a private family link (hash stored in `babory_family_links`, created by `2026-10-20_kristory_setup.sql`, which must run before the deploy).
+> - Every household `api/` function verifies the caller (`api/_lib/household.ts`). The Babory family PIN routes (`babory-unlock`, `babory-feed`, `babory-signout`; `babory-pin` is household-only) are described in §3. The private-link feature and `babory_family_links` were replaced by the family PIN (`supabase/lockdown/2026-10-20_babory_pin.sql`, run before deploying; needs `BABORY_SESSION_SECRET`).
 > - `/shower` and `/registry` are closed: `ClosedPage` shows a static message with no Supabase calls. `BabyShower.tsx`, `Registry.tsx` and `src/registry/` are kept, unrouted and unimported; the registry nav entries, realtime channels and `registry.css` import are gone. No `babylist_*` table is touched at runtime.
 > - Order Up exception: the lockdown gives anon a column-level `select (name, birth_date)` on `baby_profile` plus the `baby_profile_anon_read` policy, until Order Up moves to sign-in or a narrow function. Order Up's current `select *` fails under that until it requests `name,birth_date`. The lockdown also sets `family_pin` to null.
 
@@ -39,8 +39,8 @@ Every other hostname gets the full route table below. `vercel.json` has no domai
 | `/photos` | `PhotoMemories` | ✅ | — |
 | `/library/river` | `LibraryRiver` | ✅ | — |
 | `/library/:categoryId/river` | `LibraryRiver` | ✅ | — |
-| `/family` | `FamilyFeed` ("The Babory") | ✅, or read-only with a private link `#k=` | — |
-| `/family/photos` | `FamilyPhotos` | ✅, or read-only with a private link | — |
+| `/family` | `FamilyFeed` ("The Babory") | ✅, or family PIN → read-only feed when signed out | — |
+| `/family/photos` | `FamilyPhotos` | ✅, or family PIN → read-only when signed out | — |
 | `/shower` | `ClosedPage` | ❌ public, static "This page is closed" | — |
 | `/shower/m` | `ShowerManage` | ✅ | — |
 | `/journal` | `Journal` | ✅ | ✅ |
@@ -248,7 +248,11 @@ All app tables run with **RLS disabled** (no Supabase Auth; the client is truste
 
 All four are Vercel functions using the Web fetch signature (a named `export async function POST`, not `export default`). All use `@anthropic-ai/sdk` with model **`claude-sonnet-5`** (switched from Sonnet 4.6 in `df4c6c1`). None of them touch Kristory tables or Storage.
 
-**`api/babory-feed.ts`** (`maxDuration` 15): POST `{ token }`; SHA-256 compared with `timingSafeEqual` against non-revoked `babory_family_links` rows (service key); returns `{ profile: {name, due_date, birth_date}, posts: [...] }` with shared photos (storage path + public URL), `share_to_family` clips and milestone titles. 404 with no body otherwise; `Cache-Control: no-store`.
+**Babory family PIN (`api/babory-*.ts`, shared code `api/_lib/babory.ts`):**
+- `babory-unlock` (POST `{pin}`): lock check first (IP key and device-cookie key: 5 wrong in 15 min → 15 min lock; `*global*`: >30 wrong in an hour → 1 h lock), then scrypt + `timingSafeEqual`. Every failure is `401 {"error":"Wrong PIN"}`. Success clears the IP/device counters and sets `babory_session` (httpOnly, Secure, SameSite=Lax, Path=/, 30 days, HMAC-signed `{v, exp}`).
+- `babory-feed` (GET): 401 unless the cookie is authentic, unexpired and `v` equals `babory_family_pin.version`; then returns `{ profile: {name, due_date, birth_date}, posts: [...] }` (shared photos with public URLs, `share_to_family` clips, milestone titles). `Cache-Control: no-store`.
+- `babory-signout` (POST): clears the cookie. `babory-pin` (household-only): GET `{set, updated_at}`, POST `{pin}` (6+ digits) → `babory_set_pin` (version + 1).
+- Env: `BABORY_SESSION_SECRET` (missing → 500, only the name is logged).
 
 **Caller check (lockdown):** the other four each start with `verifyHousehold(req)` from `api/_lib/household.ts`: `Authorization: Bearer <access token>` is validated at `/auth/v1/user`, then the user id is looked up in `household_members` with the service key. Plain fetch, not supabase-js, so an `sb_secret_...` key goes only in `apikey`. 401 without a valid session, 403 for non-members. Server env: `SUPABASE_URL` (or `VITE_SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY`. The browser adds the token through `apiHeaders()` in `src/lib/supabase.ts`.
 
@@ -526,7 +530,7 @@ Created in 031.
 ### Current known issues (found while writing this snapshot)
 - **Registry transfer marks were reset.** Migration 029 went in on 2026-10-17. Before that, "Mark on Babylist" writes failed, so every pick starts as not transferred and must be marked again.
 - **The Baby milestone "Share with family?" prompt never creates a post.** `handleCompleteMilestone` (`Baby.tsx:151`) doesn't link an entry, so `result.entry_id` is always null and "Share" just navigates to `/journal/{today}`.
-- **After the lockdown SQL, `/shower` stops working for guests:** anon can't read the event, RSVP, or upload photos. The Babory is household-only too.
+- **After the lockdown SQL, `/shower` stops working for guests:** anon can't read the event, RSVP, or upload photos. The Babory is household-only except through the family PIN.
 - **"Visit The Babory →" on `/shower` is dead on the shower custom domain,** which redirects it back to `/shower`.
 - **The shower ICS is hardcoded** to 11:30 AM–2:00 PM America/New_York.
 - **Version mismatch:** Settings → About shows "Version 1.0.0", but backups write `app_version: '1.1.0'`.

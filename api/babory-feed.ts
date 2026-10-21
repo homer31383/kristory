@@ -1,38 +1,23 @@
-import { createHash, timingSafeEqual } from 'node:crypto'
-import { serviceHeaders, supabaseServerConfig } from './_lib/household.js'
+import { NO_STORE, jsonResponse, readSession, serviceClient, sessionSecret } from './_lib/babory.js'
+import { supabaseServerConfig } from './_lib/household.js'
 
 /**
- * Read-only Babory feed for extended family, opened through a private link
- * (/family?k=<token>). This is the one api/ route that doesn't need a
- * household session: the link token is the credential.
+ * Read-only Babory feed for extended family who unlocked /family with the
+ * family PIN (api/babory-unlock.ts). GET only; the credential is the signed
+ * `babory_session` cookie. It must be authentic, unexpired, and carry the
+ * current babory_family_pin.version (a PIN change signs everyone out).
+ * Otherwise: 401 with no body data.
  *
- * The page POSTs { token }. Its SHA-256 is compared in constant time with
- * every non-revoked row of babory_family_links. On a match it returns only
- * what the Babory renders: the baby's name and dates, and the family posts
- * with their shared photos, shared media and milestone titles. Anything else
- * (unknown, revoked or malformed token, wrong method) is a bare 404.
- *
- * Reads go through PostgREST with the service key, sent as `apikey` only for
- * sb_secret_ keys (see _lib/household.ts).
+ * Returns only what the Babory renders: the baby's name and dates, and the
+ * family posts with their shared photos (public URLs), share_to_family clips
+ * and milestone titles. Always Cache-Control: no-store.
  */
 
 export const maxDuration = 15
 
-const NO_STORE = { 'cache-control': 'no-store', 'x-robots-tag': 'noindex' }
-
-function notFound(): Response {
-  return new Response(null, { status: 404, headers: NO_STORE })
+function unauthorized(): Response {
+  return new Response(null, { status: 401, headers: NO_STORE })
 }
-
-function json(body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { ...NO_STORE, 'content-type': 'application/json' },
-  })
-}
-
-// 32 random bytes as base64url is 43 characters.
-const TOKEN_RE = /^[A-Za-z0-9_-]{43,128}$/
 
 const MEDIA_COLS = 'id,file_path,file_url,file_name,file_type,mime_type,file_size_bytes,duration_seconds,thumbnail_path,caption,share_to_family,sort_order,created_at'
 const POST_SELECT =
@@ -50,40 +35,21 @@ interface RawPost {
   photos: { id: string; display_order: number | null; entry_photo: { storage_path: string } | null }[] | null
 }
 
-export async function POST(req: Request): Promise<Response> {
-  const { supabaseUrl, serviceKey } = supabaseServerConfig()
-  if (!supabaseUrl || !serviceKey) {
-    console.log('babory-feed: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not configured')
-    return new Response(null, { status: 500, headers: NO_STORE })
-  }
+export async function GET(req: Request): Promise<Response> {
+  const secret = sessionSecret()
+  if (!secret) return new Response(null, { status: 500, headers: NO_STORE })
+  const db = serviceClient()
+  if (!db) return new Response(null, { status: 500, headers: NO_STORE })
+  const { supabaseUrl } = supabaseServerConfig()
 
-  let token = ''
+  const version = readSession(req, secret)
+  if (version === null) return unauthorized()
+
+  const rest = db.rest
   try {
-    const body = (await req.json()) as { token?: unknown }
-    token = typeof body?.token === 'string' ? body.token.trim() : ''
-  } catch {
-    return notFound()
-  }
-  if (!TOKEN_RE.test(token)) return notFound()
-
-  const headers = { ...serviceHeaders(serviceKey), Accept: 'application/json' }
-  const rest = async <T,>(path: string): Promise<T> => {
-    const res = await fetch(`${supabaseUrl}/rest/v1/${path}`, { headers })
-    // Never echo the response body or the key.
-    if (!res.ok) throw new Error(`${path.split('?')[0]}: HTTP ${res.status}`)
-    return (await res.json()) as T
-  }
-
-  try {
-    // 1. Token check: constant-time compare against every active link, no early exit.
-    const want = createHash('sha256').update(token, 'utf8').digest()
-    const links = await rest<{ token_hash: string }[]>('babory_family_links?select=token_hash&revoked_at=is.null')
-    let ok = false
-    for (const link of links) {
-      const have = Buffer.from(String(link.token_hash || ''), 'hex')
-      if (have.length === want.length && timingSafeEqual(have, want)) ok = true
-    }
-    if (!ok) return notFound()
+    // 1. The cookie's PIN version must still be current.
+    const pins = await rest<{ version: number }[]>('babory_family_pin?select=version&id=eq.true&limit=1')
+    if (!pins[0] || pins[0].version !== version) return unauthorized()
 
     // 2. Only what the feed renders.
     const [profiles, posts] = await Promise.all([
@@ -126,16 +92,12 @@ export async function POST(req: Request): Promise<Response> {
     }))
 
     const profile = profiles[0]
-    return json({
+    return jsonResponse({
       profile: profile ? { name: profile.name, due_date: profile.due_date, birth_date: profile.birth_date } : null,
       posts: out,
-    })
+    }, 200)
   } catch (err) {
     console.log('babory-feed: error:', err instanceof Error ? err.message : String(err))
     return new Response(null, { status: 500, headers: NO_STORE })
   }
-}
-
-export function GET(): Response {
-  return notFound()
 }
