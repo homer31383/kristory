@@ -1,7 +1,8 @@
 -- ════════════════════════════════════════════════════════════════════════════
 -- Rollback for 2026-10-20_babory_pin.sql
 --
--- WRITTEN, NOT APPLIED. Drops the PIN tables and functions and recreates
+-- WRITTEN, NOT APPLIED. Re-runnable: every drop/create is guarded with
+-- if exists / if not exists. Drops the PIN tables and functions and recreates
 -- babory_family_links exactly as 2026-10-20_kristory_setup.sql made it (RLS,
 -- household policy, grants). Old link rows are gone; new links would have to
 -- be created. Only useful together with redeploying the link-based build.
@@ -16,9 +17,10 @@ begin
   end if;
 end $$;
 
-drop function if exists public.babory_attempts_locked(text[]);
+-- Every signature any version of 2026-10-20_babory_pin.sql created.
 drop function if exists public.babory_register_failure(text, text);
-drop function if exists public.babory_attempt_failed(text, int, interval, interval);
+drop function if exists public.babory_attempt_failed(text, integer, interval, interval);
+drop function if exists public.babory_attempts_locked(text[]);
 drop function if exists public.babory_attempts_clear(text[]);
 drop function if exists public.babory_set_pin(text, text, uuid);
 

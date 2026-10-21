@@ -48,7 +48,53 @@
 --   existing lock is never "new" anyway.
 --
 -- Also drops babory_family_links (the link feature is removed).
+--
+-- RE-RUNNABLE. Safe from any starting state: nothing applied, the b1403f8
+-- version applied (babory_attempt_failed returned void, no lockouts table, no
+-- babory_register_failure), or the b30d56a version applied. It never drops or
+-- truncates babory_family_pin / babory_family_attempts / babory_family_lockouts
+-- (a PIN may already be set): tables are created if missing and completed
+-- column by column; every function is dropped by its exact signature (all
+-- signatures any version of this file created) and recreated, then its
+-- EXECUTE grants are re-applied. All in one transaction.
+--
+-- Function signatures any version created (all dropped and recreated below):
+--   babory_attempts_locked(text[])                          b1403f8, b30d56a
+--   babory_attempt_failed(text, integer, interval, interval) b1403f8 (void), b30d56a (boolean)
+--   babory_attempts_clear(text[])                           b1403f8, b30d56a
+--   babory_set_pin(text, text, uuid)                        b1403f8, b30d56a
+--   babory_register_failure(text, text)                     b30d56a
+-- No SQL-language function calls another, and plpgsql bodies record no
+-- dependencies, so plain DROP (no CASCADE) works in any order; the caller
+-- (babory_register_failure) is still dropped first.
 -- ════════════════════════════════════════════════════════════════════════════
+
+-- ─── Read-only inspection (metadata only, never row values) ─────────────────
+-- Run any time to see what is live. Reads only catalog / information_schema.
+--
+--   select t.table_name,
+--          c.relrowsecurity as rls_enabled,
+--          col.ordinal_position, col.column_name, col.data_type, col.is_nullable,
+--          col.column_default, col.is_identity
+--   from (values ('babory_family_pin'), ('babory_family_attempts'),
+--                ('babory_family_lockouts'), ('babory_family_links')) as t(table_name)
+--   left join pg_class c on c.oid = to_regclass('public.' || t.table_name)
+--   left join information_schema.columns col
+--     on col.table_schema = 'public' and col.table_name = t.table_name
+--   order by t.table_name, col.ordinal_position;
+--
+--   select p.proname,
+--          pg_get_function_identity_arguments(p.oid) as identity_args,
+--          pg_get_function_result(p.oid) as returns,
+--          p.prosecdef as security_definer,
+--          has_function_privilege('anon', p.oid, 'execute') as anon_exec,
+--          has_function_privilege('authenticated', p.oid, 'execute') as authenticated_exec,
+--          has_function_privilege('service_role', p.oid, 'execute') as service_role_exec,
+--          p.proacl as acl
+--   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--   where n.nspname = 'public' and p.proname like 'babory\_%'
+--   order by p.proname, identity_args;
+
 
 begin;
 
@@ -84,10 +130,87 @@ create table if not exists public.babory_family_lockouts (
 );
 create index if not exists babory_family_lockouts_created_at_idx on public.babory_family_lockouts (created_at);
 
+-- Complete any partially created table. Columns that are NOT NULL without a
+-- default are added nullable and tightened below only when no row is null.
+alter table public.babory_family_pin add column if not exists id boolean default true;
+alter table public.babory_family_pin add column if not exists pin_hash text;
+alter table public.babory_family_pin add column if not exists salt text;
+alter table public.babory_family_pin add column if not exists version int not null default 1;
+alter table public.babory_family_pin add column if not exists updated_at timestamptz not null default now();
+alter table public.babory_family_pin add column if not exists updated_by uuid;
+alter table public.babory_family_pin alter column id set default true;
+alter table public.babory_family_pin alter column version set default 1;
+alter table public.babory_family_pin alter column updated_at set default now();
+
+alter table public.babory_family_attempts add column if not exists ip_hash text;
+alter table public.babory_family_attempts add column if not exists failures int not null default 0;
+alter table public.babory_family_attempts add column if not exists window_start timestamptz;
+alter table public.babory_family_attempts add column if not exists locked_until timestamptz;
+alter table public.babory_family_attempts alter column failures set default 0;
+
+-- Identity column guarded explicitly (ADD COLUMN IF NOT EXISTS with an
+-- identity/serial clause has created stray sequences in some Postgres versions).
+do $$
+begin
+  if not exists (select 1 from information_schema.columns
+                 where table_schema = 'public' and table_name = 'babory_family_lockouts' and column_name = 'id') then
+    alter table public.babory_family_lockouts add column id bigint generated always as identity;
+  end if;
+end $$;
+alter table public.babory_family_lockouts add column if not exists kind text;
+alter table public.babory_family_lockouts add column if not exists created_at timestamptz not null default now();
+alter table public.babory_family_lockouts alter column created_at set default now();
+
+do $$
+declare
+  r record;
+begin
+  -- NOT NULL where the design wants it (skipped, with a notice, if rows are null).
+  for r in select * from (values
+      ('babory_family_pin', 'id'), ('babory_family_pin', 'pin_hash'), ('babory_family_pin', 'salt'),
+      ('babory_family_attempts', 'ip_hash'), ('babory_family_attempts', 'window_start'),
+      ('babory_family_lockouts', 'id'), ('babory_family_lockouts', 'kind')
+    ) as v(tbl, col)
+  loop
+    if exists (select 1 from information_schema.columns
+               where table_schema = 'public' and table_name = r.tbl and column_name = r.col and is_nullable = 'YES') then
+      begin
+        execute format('alter table public.%I alter column %I set not null', r.tbl, r.col);
+      exception when not_null_violation then
+        raise notice 'public.%.% has null rows; left nullable', r.tbl, r.col;
+      end;
+    end if;
+  end loop;
+
+  -- Primary keys.
+  if not exists (select 1 from pg_constraint where conrelid = 'public.babory_family_pin'::regclass and contype = 'p') then
+    alter table public.babory_family_pin add constraint babory_family_pin_pkey primary key (id);
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid = 'public.babory_family_attempts'::regclass and contype = 'p') then
+    alter table public.babory_family_attempts add constraint babory_family_attempts_pkey primary key (ip_hash);
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid = 'public.babory_family_lockouts'::regclass and contype = 'p') then
+    alter table public.babory_family_lockouts add constraint babory_family_lockouts_pkey primary key (id);
+  end if;
+
+  -- Check constraints (default names from the create table statements).
+  if not exists (select 1 from pg_constraint where conrelid = 'public.babory_family_pin'::regclass and conname = 'babory_family_pin_id_check') then
+    alter table public.babory_family_pin add constraint babory_family_pin_id_check check (id);
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid = 'public.babory_family_lockouts'::regclass and conname = 'babory_family_lockouts_kind_check') then
+    alter table public.babory_family_lockouts add constraint babory_family_lockouts_kind_check check (kind in ('device', 'global'));
+  end if;
+end $$;
+
 alter table public.babory_family_pin enable row level security;
 alter table public.babory_family_attempts enable row level security;
 alter table public.babory_family_lockouts enable row level security;
 -- No policies on purpose: only service_role (which bypasses RLS) may touch them.
+-- No version of this file created any; drop the obvious names in case one was
+-- added by hand.
+drop policy if exists household_only on public.babory_family_pin;
+drop policy if exists household_only on public.babory_family_attempts;
+drop policy if exists household_only on public.babory_family_lockouts;
 
 revoke all on public.babory_family_pin from anon, authenticated;
 revoke all on public.babory_family_attempts from anon, authenticated;
@@ -95,11 +218,27 @@ revoke all on public.babory_family_lockouts from anon, authenticated;
 grant select, insert, update, delete on public.babory_family_pin to service_role;
 grant select, insert, update, delete on public.babory_family_attempts to service_role;
 grant select, insert, update, delete on public.babory_family_lockouts to service_role;
-revoke all on sequence public.babory_family_lockouts_id_seq from anon, authenticated;
-grant usage, select on sequence public.babory_family_lockouts_id_seq to service_role;
+do $$
+declare
+  v_seq text := pg_get_serial_sequence('public.babory_family_lockouts', 'id');
+begin
+  if v_seq is not null then
+    execute format('revoke all on sequence %s from anon, authenticated', v_seq);
+    execute format('grant usage, select on sequence %s to service_role', v_seq);
+  end if;
+end $$;
 
 -- ─── Functions ──────────────────────────────────────────────────────────────
-create or replace function public.babory_attempts_locked(p_keys text[])
+-- Drop every signature any version created (exact identity arguments), then
+-- recreate. A changed return type (b1403f8's void babory_attempt_failed) can't
+-- be replaced in place, which is why this is drop + create.
+drop function if exists public.babory_register_failure(text, text);
+drop function if exists public.babory_attempt_failed(text, integer, interval, interval);
+drop function if exists public.babory_attempts_locked(text[]);
+drop function if exists public.babory_attempts_clear(text[]);
+drop function if exists public.babory_set_pin(text, text, uuid);
+
+create function public.babory_attempts_locked(p_keys text[])
 returns boolean
 language sql
 security definer
@@ -111,7 +250,7 @@ as $$
   );
 $$;
 
-create or replace function public.babory_attempt_failed(
+create function public.babory_attempt_failed(
   p_key text, p_max int, p_window interval, p_lock interval
 )
 returns boolean
@@ -154,7 +293,7 @@ begin
 end;
 $$;
 
-create or replace function public.babory_register_failure(p_ip_key text, p_dev_key text)
+create function public.babory_register_failure(p_ip_key text, p_dev_key text)
 returns void
 language plpgsql
 security definer
@@ -183,7 +322,7 @@ begin
 end;
 $$;
 
-create or replace function public.babory_attempts_clear(p_keys text[])
+create function public.babory_attempts_clear(p_keys text[])
 returns void
 language sql
 security definer
@@ -192,7 +331,7 @@ as $$
   delete from public.babory_family_attempts where ip_hash = any (p_keys) and ip_hash <> '*global*';
 $$;
 
-create or replace function public.babory_set_pin(p_hash text, p_salt text, p_by uuid)
+create function public.babory_set_pin(p_hash text, p_salt text, p_by uuid)
 returns timestamptz
 language sql
 security definer
@@ -210,7 +349,7 @@ as $$
 $$;
 
 revoke execute on function public.babory_attempts_locked(text[]) from public, anon, authenticated;
-revoke execute on function public.babory_attempt_failed(text, int, interval, interval) from public, anon, authenticated, service_role;
+revoke execute on function public.babory_attempt_failed(text, integer, interval, interval) from public, anon, authenticated, service_role;
 revoke execute on function public.babory_register_failure(text, text) from public, anon, authenticated;
 revoke execute on function public.babory_attempts_clear(text[]) from public, anon, authenticated;
 revoke execute on function public.babory_set_pin(text, text, uuid) from public, anon, authenticated;
@@ -227,7 +366,7 @@ notify pgrst, 'reload schema';
 commit;
 
 -- ════════════════════════════════════════════════════════════════════════════
--- Verification (read-only)
+-- Verification (read-only). The inspection queries in the header also apply.
 -- ════════════════════════════════════════════════════════════════════════════
 --
 -- RLS on, no policies (expect three trues and 0 policies):
