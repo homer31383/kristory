@@ -1,6 +1,12 @@
 # THE KRISTORY — COMPLETE REBUILD PROMPT
 # ============================================================
 # Use this prompt with Claude Code to rebuild the entire app
+
+# SECURITY (updated 2026-10-22): this prompt predates the 2026-10-20 household
+# lockdown. Every table gets RLS on, a household policy for `authenticated`
+# (public.is_household()), and grants to authenticated, service_role only.
+# Never grant anon or disable RLS. Source of truth:
+# supabase/lockdown/2026-10-20_kristory.sql and CLAUDE.md "Table grants".
 # from scratch. Run the SQL migration FIRST (Section A), then
 # paste Section B into Claude Code.
 # ============================================================
@@ -23,7 +29,7 @@ PREREQUISITES:
      name TEXT NOT NULL,
      created_at TIMESTAMPTZ DEFAULT now()
    );
-   grant select, insert, update, delete on public.users to anon, authenticated, service_role;
+   grant select, insert, update, delete on public.users to authenticated, service_role;
    INSERT INTO users (id, name) VALUES
      ('9df51388-65e8-44bf-bfad-65729744190b', 'Chris'),
      ('cab9d09c-0083-4ce1-aaf5-9a045d8a4315', 'Krista');
@@ -39,8 +45,9 @@ CREATE TABLE journal_entries (
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
-grant select, insert, update, delete on public.journal_entries to anon, authenticated, service_role;
-ALTER TABLE journal_entries DISABLE ROW LEVEL SECURITY;
+grant select, insert, update, delete on public.journal_entries to authenticated, service_role;
+ALTER TABLE journal_entries ENABLE ROW LEVEL SECURITY;
+CREATE POLICY household_only ON public.journal_entries FOR ALL TO authenticated USING (public.is_household()) WITH CHECK (public.is_household());
 
 -- ENTRY SECTIONS (one per user per day)
 CREATE TABLE entry_sections (
@@ -52,8 +59,9 @@ CREATE TABLE entry_sections (
   updated_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE (entry_id, user_id)
 );
-grant select, insert, update, delete on public.entry_sections to anon, authenticated, service_role;
-ALTER TABLE entry_sections DISABLE ROW LEVEL SECURITY;
+grant select, insert, update, delete on public.entry_sections to authenticated, service_role;
+ALTER TABLE entry_sections ENABLE ROW LEVEL SECURITY;
+CREATE POLICY household_only ON public.entry_sections FOR ALL TO authenticated USING (public.is_household()) WITH CHECK (public.is_household());
 
 ALTER TABLE entry_sections ADD COLUMN fts TSVECTOR
   GENERATED ALWAYS AS (to_tsvector('english', coalesce(content, ''))) STORED;
@@ -68,8 +76,9 @@ CREATE TABLE entry_photos (
   display_order INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT now()
 );
-grant select, insert, update, delete on public.entry_photos to anon, authenticated, service_role;
-ALTER TABLE entry_photos DISABLE ROW LEVEL SECURITY;
+grant select, insert, update, delete on public.entry_photos to authenticated, service_role;
+ALTER TABLE entry_photos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY household_only ON public.entry_photos FOR ALL TO authenticated USING (public.is_household()) WITH CHECK (public.is_household());
 
 -- CATEGORIES
 CREATE TABLE categories (
@@ -80,8 +89,9 @@ CREATE TABLE categories (
   user_id UUID REFERENCES users(id) NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );
-grant select, insert, update, delete on public.categories to anon, authenticated, service_role;
-ALTER TABLE categories DISABLE ROW LEVEL SECURITY;
+grant select, insert, update, delete on public.categories to authenticated, service_role;
+ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
+CREATE POLICY household_access ON public.categories FOR ALL TO authenticated USING (public.is_household()) WITH CHECK (public.is_household());
 
 -- Seed default categories (using Chris's user_id)
 INSERT INTO categories (name, emoji, is_default, user_id) VALUES
@@ -113,8 +123,9 @@ CREATE TABLE tagged_items (
   item_date DATE,
   created_at TIMESTAMPTZ DEFAULT now()
 );
-grant select, insert, update, delete on public.tagged_items to anon, authenticated, service_role;
-ALTER TABLE tagged_items DISABLE ROW LEVEL SECURITY;
+grant select, insert, update, delete on public.tagged_items to authenticated, service_role;
+ALTER TABLE tagged_items ENABLE ROW LEVEL SECURITY;
+CREATE POLICY household_only ON public.tagged_items FOR ALL TO authenticated USING (public.is_household()) WITH CHECK (public.is_household());
 
 CREATE INDEX idx_tagged_items_name ON tagged_items USING GIN (to_tsvector('english', name));
 
@@ -125,8 +136,9 @@ CREATE TABLE recipe_tags (
   emoji TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
-grant select, insert, update, delete on public.recipe_tags to anon, authenticated, service_role;
-ALTER TABLE recipe_tags DISABLE ROW LEVEL SECURITY;
+grant select, insert, update, delete on public.recipe_tags to authenticated, service_role;
+ALTER TABLE recipe_tags ENABLE ROW LEVEL SECURITY;
+CREATE POLICY household_only ON public.recipe_tags FOR ALL TO authenticated USING (public.is_household()) WITH CHECK (public.is_household());
 
 INSERT INTO recipe_tags (name, emoji) VALUES
   ('Pasta', '🍝'), ('Salad', '🥗'), ('Soup', '🍲'),
@@ -140,8 +152,9 @@ CREATE TABLE tagged_item_recipe_tags (
   recipe_tag_id UUID REFERENCES recipe_tags(id) ON DELETE CASCADE,
   PRIMARY KEY (tagged_item_id, recipe_tag_id)
 );
-grant select, insert, update, delete on public.tagged_item_recipe_tags to anon, authenticated, service_role;
-ALTER TABLE tagged_item_recipe_tags DISABLE ROW LEVEL SECURITY;
+grant select, insert, update, delete on public.tagged_item_recipe_tags to authenticated, service_role;
+ALTER TABLE tagged_item_recipe_tags ENABLE ROW LEVEL SECURITY;
+CREATE POLICY household_only ON public.tagged_item_recipe_tags FOR ALL TO authenticated USING (public.is_household()) WITH CHECK (public.is_household());
 
 -- PARTICIPANTS (who watched/read/visited)
 CREATE TABLE tagged_item_participants (
@@ -149,8 +162,9 @@ CREATE TABLE tagged_item_participants (
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   PRIMARY KEY (tagged_item_id, user_id)
 );
-grant select, insert, update, delete on public.tagged_item_participants to anon, authenticated, service_role;
-ALTER TABLE tagged_item_participants DISABLE ROW LEVEL SECURITY;
+grant select, insert, update, delete on public.tagged_item_participants to authenticated, service_role;
+ALTER TABLE tagged_item_participants ENABLE ROW LEVEL SECURITY;
+CREATE POLICY household_only ON public.tagged_item_participants FOR ALL TO authenticated USING (public.is_household()) WITH CHECK (public.is_household());
 
 -- TRIPS
 CREATE TABLE trips (
@@ -162,16 +176,18 @@ CREATE TABLE trips (
   end_date DATE NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );
-grant select, insert, update, delete on public.trips to anon, authenticated, service_role;
-ALTER TABLE trips DISABLE ROW LEVEL SECURITY;
+grant select, insert, update, delete on public.trips to authenticated, service_role;
+ALTER TABLE trips ENABLE ROW LEVEL SECURITY;
+CREATE POLICY household_only ON public.trips FOR ALL TO authenticated USING (public.is_household()) WITH CHECK (public.is_household());
 
 CREATE TABLE trip_entries (
   trip_id UUID REFERENCES trips(id) ON DELETE CASCADE,
   entry_id UUID REFERENCES journal_entries(id) ON DELETE CASCADE,
   PRIMARY KEY (trip_id, entry_id)
 );
-grant select, insert, update, delete on public.trip_entries to anon, authenticated, service_role;
-ALTER TABLE trip_entries DISABLE ROW LEVEL SECURITY;
+grant select, insert, update, delete on public.trip_entries to authenticated, service_role;
+ALTER TABLE trip_entries ENABLE ROW LEVEL SECURITY;
+CREATE POLICY household_only ON public.trip_entries FOR ALL TO authenticated USING (public.is_household()) WITH CHECK (public.is_household());
 
 -- BABY
 CREATE TABLE baby_milestones (
@@ -184,8 +200,9 @@ CREATE TABLE baby_milestones (
   photo_path TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
-grant select, insert, update, delete on public.baby_milestones to anon, authenticated, service_role;
-ALTER TABLE baby_milestones DISABLE ROW LEVEL SECURITY;
+grant select, insert, update, delete on public.baby_milestones to authenticated, service_role;
+ALTER TABLE baby_milestones ENABLE ROW LEVEL SECURITY;
+CREATE POLICY household_only ON public.baby_milestones FOR ALL TO authenticated USING (public.is_household()) WITH CHECK (public.is_household());
 
 CREATE TABLE baby_profile (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -198,8 +215,9 @@ CREATE TABLE baby_profile (
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
-grant select, insert, update, delete on public.baby_profile to anon, authenticated, service_role;
-ALTER TABLE baby_profile DISABLE ROW LEVEL SECURITY;
+grant select, insert, update, delete on public.baby_profile to authenticated, service_role;
+ALTER TABLE baby_profile ENABLE ROW LEVEL SECURITY;
+CREATE POLICY household_only ON public.baby_profile FOR ALL TO authenticated USING (public.is_household()) WITH CHECK (public.is_household());
 
 INSERT INTO baby_profile (name, due_date) VALUES ('Baby', '2026-10-02');
 

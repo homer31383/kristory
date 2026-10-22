@@ -150,9 +150,10 @@ All migrations through `032` are applied in production (probed 2026-10-17).
 - Every new table in `public` must be granted explicitly in the same SQL that creates it, whether it's a migration file or run in the dashboard SQL editor. Since the household lockdown:
   `grant select, insert, update, delete on public.<table> to authenticated, service_role;` (no anon), plus RLS and the `household_only` policy.
 - Migrations 001-033 still grant anon; the lockdown SQL revokes it.
-- If supabase-js returns "permission denied" on a table with RLS off, check for a missing grant first, before assuming it's an RLS problem.
-- To list public tables that are missing anon write access:
-  `select table_name from information_schema.tables t where table_schema = 'public' and table_type = 'BASE TABLE' and not exists (select 1 from information_schema.role_table_grants g where g.table_schema = 'public' and g.table_name = t.table_name and g.grantee = 'anon' and g.privilege_type = 'INSERT');`
+- Never grant anon and never disable RLS on a new table. A table only the server touches gets `service_role` alone.
+- If supabase-js returns "permission denied" on a table, check for a missing grant first, then check that table's RLS policy.
+- To list public tables that are missing authenticated write access (anon is not supposed to have any):
+  `select table_name from information_schema.tables t where table_schema = 'public' and table_type = 'BASE TABLE' and not exists (select 1 from information_schema.role_table_grants g where g.table_schema = 'public' and g.table_name = t.table_name and g.grantee = 'authenticated' and g.privilege_type = 'INSERT');`
 
 ## Key Routes
 
