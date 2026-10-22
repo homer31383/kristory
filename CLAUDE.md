@@ -2,7 +2,7 @@
 
 A shared daily journal PWA for Chris and Krista. Both users write their own section for each day, attach photos, audio and video, tag items across categories, keep a book/media Library, track recipes, organize trips, record baby milestones, and plan a shared baby registry. The app also exposes:
 - a separate baby feed at `/family` called **"The Babory"**: full view for the signed-in household, read-only view for extended family behind a server-checked family PIN;
-- `/shower`, now a static "This page is closed" page (also on its own custom domain), and the shower manager at `/shower/m` (sign-in required).
+- `/shower`, the full shower page for a signed-in household member and a static "This page is closed" page for everyone else (also on its own custom domain), and the shower manager at `/shower/m` (sign-in required).
 
 **Household lockdown (branch `household-lockdown`, 2026-10-20).** The app signs in with Supabase Auth (email + password, Chris and Krista only, sign-ups disabled). The PIN gates and the user picker are gone. `supabase/lockdown/2026-10-20_kristory.sql` (written, applied by hand) turns RLS on for every Kristory-owned table with a single `public.is_household()` policy, revokes anon, and makes both buckets household-only for listing and writes (public object URLs still work). Rollback: `2026-10-20_kristory_rollback.sql`. `2026-10-20_kristory_setup.sql` created `babory_family_links` for the old private-link feature; `2026-10-20_babory_pin.sql` drops it.
 
@@ -10,7 +10,7 @@ A shared daily journal PWA for Chris and Krista. Both users write their own sect
 
 **TODO:** Order Up must move to sign-in or a narrow function, then drop the anon select policy on baby_profile (`baby_profile_anon_read`) and the anon column grant `select (name, birth_date)`, both added by the lockdown SQL. Until then, note that Order Up currently runs `select *` on baby_profile, which fails under the column grant until it asks for `name,birth_date` explicitly.
 
-**Registry retired (2026-10-20).** `/registry` is a static "This page is closed" page (`ClosedPage`), with no auth or database calls, no realtime and no nav entry. `src/views/Registry.tsx` and `src/registry/` are kept in the repo but nothing imports them (the `registry.css` import was removed from `index.css`), so no `babylist_*` table is read or written at runtime.
+**Registry retired (2026-10-20).** `/registry` is a static "This page is closed" page (`ClosedPage`), with no auth or database calls, no realtime and no nav entry. `src/views/Registry.tsx` and `src/registry/` were removed on 2026-10-21, so no `babylist_*` table is read or written at runtime.
 
 **`STATE-SNAPSHOT.md`** (2026-10-17) is the code-verified reference for the full schema, every route, features, storage, and backup gaps. Keep it in sync when you change any of those.
 
@@ -25,7 +25,7 @@ A shared daily journal PWA for Chris and Krista. Both users write their own sect
 - **Dates**: date-fns v3
 - **PDF export**: jsPDF
 - **Backup ZIPs**: JSZip
-- **CSV**: papaparse (shower menu import, registry import/export)
+- **CSV**: papaparse is in `package.json` but `src/` no longer imports it (only untracked local recovery scripts use it); `ShowerManage` has its own CSV parser
 - **QR codes**: qrcode (shower photo-upload QR)
 - **AI**: `@anthropic-ai/sdk` in Vercel serverless functions under `api/` (model `claude-sonnet-5`)
 - **HTML sanitization**: DOMPurify
@@ -68,7 +68,7 @@ These rules have caused real bugs in the past. Follow them.
 
 14. **Tables subscribed to realtime need `REPLICA IDENTITY FULL`.** Without it, filtered DELETE events are dropped (see migration 021). Also don't use partial unique indexes as upsert targets.
 
-15. **The agent can't run SQL.** It only has the anon key (PostgREST); after the lockdown anon can't read Kristory tables at all, so column probes need a signed-in token. The user runs every migration in the Supabase SQL Editor. Ship code that depends on a new column only after the user confirms the migration ran. To check, probe `GET /rest/v1/<table>?select=<col>&limit=1`: 200 means the column exists, 400 means it doesn't.
+15. **The agent can't run SQL.** It only has the browser key (`VITE_SUPABASE_ANON_KEY`, now an `sb_publishable_` key; PostgREST); after the lockdown that key alone can't read Kristory tables at all, so column probes need a signed-in token. The user runs every migration in the Supabase SQL Editor. Ship code that depends on a new column only after the user confirms the migration ran. To check, probe `GET /rest/v1/<table>?select=<col>&limit=1`: 200 means the column exists, 400 means it doesn't.
 
 ## User IDs (Hardcoded References)
 
@@ -178,14 +178,14 @@ All migrations through `032` are applied in production (probed 2026-10-17).
 | `/settings` | `Settings` | All settings + Backup & Restore |
 | `/family` | `FamilyFeed` | **"The Babory"** branding, no Kristory chrome; household sign-in, or the family PIN screen then the read-only feed when nobody is signed in |
 | `/family/photos` | `FamilyPhotos` | Babory photo gallery; same access as `/family` |
-| `/shower` | `ClosedPage` | Static "This page is closed". No Supabase calls. `BabyShower.tsx` is kept but unrouted |
+| `/shower` | `ShowerRoute` | `BabyShower` for a signed-in household member (`is_household()` check, reads through their session); everyone else gets the static `ClosedPage` and no shower queries run. No sign-in prompt (sign in at `/shower/m`) |
 | `/shower/m` | `ShowerManage` | Shower manager; household sign-in |
 
-Every route except `/shower`, `/registry` and signed-out visits to `/family` is wrapped in `RequireAuth` (`src/components/RequireAuth.tsx`), which shows the sign-in screen (titled "The Babory" / "Shower Manager" on those routes) until a household member is signed in. Sign out is in Settings > Account; it removes all realtime channels and clears the React Query cache. The family routes still never query journal entries directly. `baby_profile.family_pin` still exists in the database but nothing reads it.
+Every route except `/shower` (household check in `ShowerRoute`, no sign-in prompt), `/registry` and signed-out visits to `/family` is wrapped in `RequireAuth` (`src/components/RequireAuth.tsx`), which shows the sign-in screen (titled "The Babory" / "Shower Manager" on those routes) until a household member is signed in. Sign out is in Settings > Account; it removes all realtime channels and clears the React Query cache. The family routes still never query journal entries directly. `baby_profile.family_pin` still exists in the database but nothing reads it.
 
 **Babory family PIN.** When nobody is signed in, `/family` and `/family/photos` show `FamilyPinScreen`. The PIN goes to `api/babory-unlock.ts`, which checks locks first (5 wrong tries per IP or per device in 15 minutes lock that key for 15 minutes; more than 30 wrong tries in an hour across all devices lock the page for an hour), then compares an scrypt hash with `timingSafeEqual`. Every failure, lockout or missing PIN is the same `401 {"error":"Wrong PIN"}`. A right PIN sets the `babory_session` cookie (httpOnly, Secure, SameSite=Lax, 30 days; `{v, exp}` signed with HMAC-SHA256 and `BABORY_SESSION_SECRET`). `api/babory-feed.ts` (GET) answers only for a valid cookie whose `v` equals the current PIN `version`, so changing the PIN signs every family device out; otherwise 401. It returns only the baby's name and dates, family posts, shared photos (public URLs), shared clips and milestone titles. `api/babory-signout.ts` clears the cookie. The household sets or changes the PIN in Settings > Family Feed (`FamilyPinControls` → `api/babory-pin.ts`, household-only). The PIN is exactly 4 digits, and the server rejects easy ones (`isWeakPin` in `api/_lib/babory.ts`): one digit repeated, runs by 1 up or down (0123…6789, 9876…3210, plus 7890 and 0987), and the baby's birthday as MMDD or DDMM (`birth_date`, or `due_date` while there is no birth date). Settings also shows device and page (global) lockouts in the last 7 days, from the service-only `babory_family_lockouts` table; `babory_register_failure` records one event per new lockout. Family viewers have no Names tab and no writes. Shared server code is in `api/_lib/babory.ts`.
 
-**Custom domain:** on any hostname ending in `leahybernierbabyshower.com`, `App.tsx` serves only `/shower` (the closed page) and `/shower/m`; every other path redirects to `/shower`.
+**Custom domain:** on any hostname ending in `leahybernierbabyshower.com`, `App.tsx` serves only `/shower` (same `ShowerRoute`: shower page for the household, closed page for everyone else) and `/shower/m`; every other path redirects to `/shower`.
 
 ## Architecture Patterns
 
@@ -219,13 +219,13 @@ The bucket's storage policies are not in any migration.
 
 All use `claude-sonnet-5`, need `ANTHROPIC_API_KEY`, and have `maxDuration` 60/60/60/30 respectively.
 
-`babory-unlock`, `babory-feed` and `babory-signout` serve the family PIN flow and don't need a household session (the PIN and the signed cookie are their credentials); `babory-pin` is household-only. Every other function starts with `verifyHousehold(req)` from `api/_lib/household.ts` (import it as `./_lib/household.js`). It reads `Authorization: Bearer <access token>`, validates it at `/auth/v1/user`, then looks the user up in `household_members` with `SUPABASE_SERVICE_ROLE_KEY`. It uses plain fetch, not supabase-js (2.98 would send a key as Bearer), so an `sb_secret_...` key only ever goes in the `apikey` header; legacy JWT keys also get a Bearer header. Needs `SUPABASE_URL` (or `VITE_SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY` on Vercel. Browser callers build headers with `apiHeaders()` from `src/lib/supabase.ts`.
+`babory-unlock`, `babory-feed` and `babory-signout` serve the family PIN flow and don't need a household session (the PIN and the signed cookie are their credentials); `babory-pin` is household-only. Every other function starts with `verifyHousehold(req)` from `api/_lib/household.ts` (import it as `./_lib/household.js`). It reads `Authorization: Bearer <access token>`, validates it at `/auth/v1/user`, then looks the user up in `household_members` with `SUPABASE_SERVICE_ROLE_KEY`. It uses plain fetch, not supabase-js (2.98 would send a key as Bearer), so an `sb_secret_...` key only ever goes in the `apikey` header; legacy JWT keys (now disabled) would also get a Bearer header. Needs `SUPABASE_URL` (or `VITE_SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY` on Vercel. Browser callers build headers with `apiHeaders()` from `src/lib/supabase.ts`.
 
-### Registry (retired, code kept unrouted)
-`/registry` now renders `ClosedPage`. The notes below describe the dormant code in `src/registry/` and `src/views/Registry.tsx`. It used a single hard-coded `REGISTRY_ID`. Identity is resolved through `babylist_people.kristory_user_id`. Live sync uses the realtime channel `registry:{id}` plus a presence channel. The Chrome extension pairs through `babylist_extension_tokens`.
+### Registry (retired, code removed)
+`/registry` renders `ClosedPage`. The registry code (`src/registry/`, `src/views/Registry.tsx`) was removed on 2026-10-21. The `babylist_*` tables and their migrations are untouched.
 
 ### Audio & Video
-Clips go to the public `kristory-media` bucket as `{entry_id}/{uuid}.{ext}` (50MB cap), with video posters at `{entry_id}/{uuid}-thumb.jpg`. Uploads use XHR in `src/lib/media.ts` for progress, sending the session access token as `Authorization` and the anon key as `apikey`. Players live in `src/components/media/`; use `preload="none"` on the family feed. Deleting a journal entry must call `deleteEntryMediaFiles(entryId)` first: the rows cascade but bucket files don't.
+Clips go to the public `kristory-media` bucket as `{entry_id}/{uuid}.{ext}` (50MB cap), with video posters at `{entry_id}/{uuid}-thumb.jpg`. Uploads use XHR in `src/lib/media.ts` for progress, sending the session access token as `Authorization` and the browser key (`sb_publishable_`) as `apikey`. Players live in `src/components/media/`; use `preload="none"` on the family feed. Deleting a journal entry must call `deleteEntryMediaFiles(entryId)` first: the rows cascade but bucket files don't.
 
 ### Family Feed Separation
 The `/family` route uses a completely separate page layout. It only ever queries `family_posts`, `family_post_photos`, `entry_photos`, `journal_media` (nested under the post's entry, filtered to `share_to_family`), `baby_profile`, `baby_milestones`, and `baby_name_suggestions` — never journal entries, tagged items, trips, etc.
@@ -248,7 +248,7 @@ The `/family` route uses a completely separate page layout. It only ever queries
 
 8. **PowerShell uses `;` for chaining, not `&&`**: The user is on Windows. When suggesting commands, use `;` (or separate commands).
 
-9. **Constants user IDs are empty strings**: `USERS` in `src/lib/constants.ts` has empty `id` strings — actual UUIDs come from the `users` table at runtime via `UserPicker`. Never hardcode the UUIDs in `constants.ts`.
+9. **Constants user IDs are empty strings**: `USERS` in `src/lib/constants.ts` has empty `id` strings; actual UUIDs come from the `users` table at sign-in via `useUser` (see User IDs). Never hardcode the UUIDs in `constants.ts`.
 
 10. **PWA service worker caching**: PWA auto-updates on reload (`skipWaiting + clientsClaim`). Google Fonts cached with CacheFirst. If styles look stale, check the service worker in DevTools.
 
