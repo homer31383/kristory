@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
+import { supabase } from './lib/supabase'
 import { UserProvider, useUser } from './hooks/useUser'
 import { ThemeProvider } from './hooks/useTheme'
 import Layout from './components/Layout'
@@ -26,6 +27,7 @@ import PhotoMemories from './views/PhotoMemories'
 import LibraryRiver from './views/LibraryRiver'
 import ClosedPage from './views/ClosedPage'
 import ShowerManage from './views/ShowerManage'
+import BabyShower from './views/BabyShower'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -58,13 +60,38 @@ function FamilyRoute({ photos = false }: { photos?: boolean }) {
   return <RequireAuth title="The Babory">{photos ? <FamilyPhotos /> : <FamilyFeed />}</RequireAuth>
 }
 
+// The shower page: a signed-in household member (is_household() true) sees the
+// full BabyShower page, read and written through their own session. Everyone
+// else gets the static closed page and BabyShower never mounts, so none of its
+// queries run for them. No sign-in prompt here; sign in at /shower/m.
+function ShowerRoute() {
+  const { status, session } = useUser()
+  const userId = session?.user?.id ?? null
+  const household = useQuery({
+    queryKey: ['is-household', userId],
+    enabled: status === 'ready' && !!userId,
+    staleTime: 1000 * 60 * 10,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('is_household')
+      if (error) throw error
+      return data === true
+    },
+  })
+
+  if (status === 'loading' || status === 'resolving' || (status === 'ready' && household.isPending)) {
+    return <div className="min-h-screen" style={{ backgroundColor: '#EDE6DE' }} />
+  }
+  if (status === 'ready' && household.data === true) return <BabyShower />
+  return <ClosedPage title="Baby Shower" />
+}
+
 function AppRoutes() {
   const isShowerDomain = window.location.hostname.endsWith('leahybernierbabyshower.com')
 
   if (isShowerDomain) {
     return (
       <Routes>
-        <Route path="/shower" element={<ClosedPage title="Baby Shower" />} />
+        <Route path="/shower" element={<ShowerRoute />} />
         <Route path="/shower/m" element={<RequireAuth title="Shower Manager"><ShowerManage /></RequireAuth>} />
         <Route path="*" element={<Navigate to="/shower" replace />} />
       </Routes>
@@ -100,7 +127,7 @@ function AppRoutes() {
           </RequireAuth>
         }
       />
-      <Route path="/shower" element={<ClosedPage title="Baby Shower" />} />
+      <Route path="/shower" element={<ShowerRoute />} />
       <Route path="/shower/m" element={<RequireAuth title="Shower Manager"><ShowerManage /></RequireAuth>} />
       {/* The registry is retired: static page, no auth or database calls. */}
       <Route path="/registry" element={<ClosedPage title="Baby Registry" note="The registry is no longer in use." />} />

@@ -10,7 +10,7 @@ No secrets, keys or PIN values appear in this file.
 > - Sign-in is Supabase Auth email + password (Chris and Krista; sign-ups disabled). `UserPicker`, `AppPinLock`, `useAppPin` and the Babory / shower-manager PIN gates are removed. `src/hooks/useUser.tsx` resolves the Kristory `users` row by matching the Auth account's `user_metadata.name`.
 > - `supabase/lockdown/2026-10-20_kristory.sql` (written, **not applied** at the time of writing) enables RLS with one `household_only` policy (`public.is_household()`) on 28 Kristory-owned tables, revokes anon, deletes `app_settings.app_pin`, and replaces the open storage policies on `kristory-photos` and `kristory-media` with household-only ones. Buckets stay public. Rollback: `2026-10-20_kristory_rollback.sql`.
 > - Every household `api/` function verifies the caller (`api/_lib/household.ts`). The Babory family PIN routes (`babory-unlock`, `babory-feed`, `babory-signout`; `babory-pin` is household-only) are described in §3. The private-link feature and `babory_family_links` were replaced by the family PIN (`supabase/lockdown/2026-10-20_babory_pin.sql`, run before deploying; needs `BABORY_SESSION_SECRET`).
-> - `/shower` and `/registry` are closed: `ClosedPage` shows a static message with no Supabase calls. `BabyShower.tsx` is kept, unrouted and unimported. The registry code (`Registry.tsx`, `src/registry/`) was removed on 2026-10-21; its nav entries, realtime channels and `registry.css` import were already gone. No `babylist_*` table is touched at runtime.
+> - `/registry` is closed: `ClosedPage` shows a static message with no Supabase calls. `/shower` (2026-10-21) shows `BabyShower.tsx` to a signed-in household member (`ShowerRoute` in `App.tsx` checks `is_household()`, reads through the session) and `ClosedPage` to everyone else, with no shower queries for them. The registry code (`Registry.tsx`, `src/registry/`) was removed on 2026-10-21; its nav entries, realtime channels and `registry.css` import were already gone. No `babylist_*` table is touched at runtime.
 > - Order Up exception: the lockdown gives anon a column-level `select (name, birth_date)` on `baby_profile` plus the `baby_profile_anon_read` policy, until Order Up moves to sign-in or a narrow function. Order Up's current `select *` fails under that until it requests `name,birth_date`. The lockdown also sets `family_pin` to null.
 
 ---
@@ -23,7 +23,7 @@ No secrets, keys or PIN values appear in this file.
 
 | Path | View |
 |---|---|
-| `/shower` | `ClosedPage` (static, no Supabase calls) |
+| `/shower` | `ShowerRoute`: `BabyShower` for a signed-in household member, else `ClosedPage` |
 | `/shower/m` | `ShowerManage` (household sign-in) |
 | `*` | `<Navigate to="/shower" replace>` |
 
@@ -41,7 +41,7 @@ Every other hostname gets the full route table below. `vercel.json` has no domai
 | `/library/:categoryId/river` | `LibraryRiver` | ✅ | — |
 | `/family` | `FamilyFeed` ("The Babory") | ✅, or family PIN → read-only feed when signed out | — |
 | `/family/photos` | `FamilyPhotos` | ✅, or family PIN → read-only when signed out | — |
-| `/shower` | `ClosedPage` | ❌ public, static "This page is closed" | — |
+| `/shower` | `ShowerRoute` | household member sees `BabyShower`; anyone else the static closed page (no sign-in prompt) | — |
 | `/shower/m` | `ShowerManage` | ✅ | — |
 | `/journal` | `Journal` | ✅ | ✅ |
 | `/journal/:date` | `EntryDetail` | ✅ | ✅ |
