@@ -1,5 +1,7 @@
 # The Kristory
 
+> **Security source of truth:** read `D:\AI\Claude\SECURITY-STATE.md` before changing sign-in, keys, grants, RLS, storage or any public-facing page. It overrides anything in this file that says otherwise (PIN gates, user pickers, RLS off, anon grants, legacy anon or service_role keys, public tables).
+
 A shared daily journal PWA for Chris and Krista. Both users write their own section for each day, attach photos, audio and video, tag items across categories, keep a book/media Library, track recipes, organize trips, record baby milestones, and plan a shared baby registry. The app also exposes:
 - a separate baby feed at `/family` called **"The Babory"**: full view for the signed-in household, read-only view for extended family behind a server-checked family PIN;
 - `/shower`, the full shower page for a signed-in household member and a static "This page is closed" page for everyone else (also on its own custom domain), and the shower manager at `/shower/m` (sign-in required).
