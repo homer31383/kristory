@@ -1,7 +1,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 -- Household lockdown, setup step: Kristory (2026-10-20)
 --
--- WRITTEN, NOT APPLIED. Run it in the Supabase SQL Editor BEFORE deploying the
+-- SUPERSEDED: its only table was dropped by 2026-10-20_babory_pin.sql; do not re-run. Run it in the Supabase SQL Editor BEFORE deploying the
 -- household-lockdown build. It is additive: it creates one new table and
 -- touches nothing that exists. The main lockdown file
 -- (2026-10-20_kristory.sql) runs later and only re-asserts this table's policy.

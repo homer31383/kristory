@@ -1,7 +1,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 -- Babory family PIN (2026-10-20)
 --
--- WRITTEN, NOT APPLIED. Run it in the Supabase SQL Editor BEFORE deploying
+-- APPLIED 2026-10-20 (or 2026-10-21 for re-runs); do not re-run. Run it in the Supabase SQL Editor BEFORE deploying
 -- the `babory-pin` build. Rollback: 2026-10-20_babory_pin_rollback.sql
 --
 -- Replaces the private family links with one server-checked PIN for

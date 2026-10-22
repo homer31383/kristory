@@ -1,7 +1,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 -- Household lockdown: Kristory (2026-10-20)
 --
--- WRITTEN, NOT APPLIED. Run it by hand in the Supabase SQL Editor, after the
+-- APPLIED 2026-10-20 (or 2026-10-21 for re-runs); do not re-run. Run it by hand in the Supabase SQL Editor, after the
 -- Kristory sign-in build is deployed. Rollback: 2026-10-20_kristory_rollback.sql
 --
 -- What it does:
