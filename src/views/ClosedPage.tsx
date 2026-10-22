@@ -2,8 +2,8 @@
  * Static "This page is closed" screen for retired pages: the public baby
  * shower (/shower, also on the shower custom domain) and the baby registry
  * (/registry). It makes no Supabase calls, so it works for anyone, signed in
- * or not. BabyShower.tsx and Registry.tsx (+ src/registry/) are kept in the
- * repo but nothing imports them.
+ * or not. BabyShower.tsx is kept in the repo but nothing imports it; the
+ * registry code was removed.
  */
 export default function ClosedPage({ title, note = 'Thank you for celebrating with us.' }: { title: string; note?: string }) {
   return (
