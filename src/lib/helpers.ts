@@ -39,6 +39,15 @@ export function truncateText(text: string, maxLength: number): string {
 }
 
 export async function resizeImage(file: File, maxWidth = 1600, quality = 0.85): Promise<Blob> {
+  return (await resizeImageSized(file, maxWidth, quality)).blob
+}
+
+/** resizeImage plus the output's pixel size and the source's long edge. */
+export async function resizeImageSized(
+  file: File,
+  maxWidth = 1600,
+  quality = 0.85,
+): Promise<{ blob: Blob; width: number; height: number; sourceLongEdge: number }> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     const canvas = document.createElement('canvas')
@@ -61,7 +70,12 @@ export async function resizeImage(file: File, maxWidth = 1600, quality = 0.85): 
         (blob) => {
           if (blob) {
             console.error(`[resizeImage] Blob created: ${blob.size} bytes`)
-            resolve(blob)
+            resolve({
+              blob,
+              width: canvas.width,
+              height: canvas.height,
+              sourceLongEdge: Math.max(img.width, img.height),
+            })
           } else {
             reject(new Error('canvas.toBlob returned null — image may be too large for this device'))
           }
@@ -82,3 +96,29 @@ export function getStorageUrl(path: string): string {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
   return `${supabaseUrl}/storage/v1/object/public/kristory-photos/${path}`
 }
+
+/**
+ * Display copy (1600 px, JPEG 0.85) plus, when the source is bigger than
+ * 1600 px, a print copy (3000 px, JPEG 0.9) for the book builder.
+ */
+export async function preparePhotoUpload(file: File): Promise<{
+  blob: Blob
+  width: number
+  height: number
+  print: { blob: Blob; width: number; height: number } | null
+}> {
+  const display = await resizeImageSized(file)
+  if (display.sourceLongEdge <= 1600) {
+    return { blob: display.blob, width: display.width, height: display.height, print: null }
+  }
+  const print = await resizeImageSized(file, PRINT_COPY_MAX_EDGE, PRINT_COPY_QUALITY)
+  return {
+    blob: display.blob,
+    width: display.width,
+    height: display.height,
+    print: { blob: print.blob, width: print.width, height: print.height },
+  }
+}
+
+export const PRINT_COPY_MAX_EDGE = 3000
+export const PRINT_COPY_QUALITY = 0.9

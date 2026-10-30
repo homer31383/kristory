@@ -6,7 +6,7 @@ import { useBabyMilestones, useCreateBabyMilestone, useDeleteBabyMilestone, PREG
 import { useFamilyPostForEntry, useCreateFamilyPost, useUpdateFamilyPost, useDeleteFamilyPost } from '../hooks/useFamilyFeed'
 import { useUser } from '../hooks/useUser'
 import { useUpdateMedia } from '../hooks/useMedia'
-import { formatDateHeading, getStorageUrl, resizeImage, getTodayString } from '../lib/helpers'
+import { formatDateHeading, getStorageUrl, preparePhotoUpload, getTodayString } from '../lib/helpers'
 import { DEBOUNCE_SAVE_MS } from '../lib/constants'
 import RichTextEditor from '../components/RichTextEditor'
 import AddItemSheet from '../components/AddItemSheet'
@@ -202,14 +202,14 @@ export default function EntryDetail() {
 
       for (const file of Array.from(files)) {
         console.error(`[PhotoUpload] Resizing ${file.name} (${file.type}, ${file.size} bytes)...`)
-        const blob = await resizeImage(file)
-        console.error(`[PhotoUpload] Resized to ${blob.size} bytes, uploading to Supabase Storage...`)
+        const prepared = await preparePhotoUpload(file)
+        console.error(`[PhotoUpload] Resized to ${prepared.blob.size} bytes, uploading to Supabase Storage...`)
 
         await uploadPhoto.mutateAsync({
           entryId,
           entryDate: date,
           userId: user.id,
-          blob,
+          ...prepared,
         })
         console.error('[PhotoUpload] Upload + DB insert succeeded')
       }
@@ -236,8 +236,8 @@ export default function EntryDetail() {
       setPhotoError(null)
       try {
         const entryId = await ensureEntry()
-        const blob = await resizeImage(file)
-        await uploadPhoto.mutateAsync({ entryId, entryDate: date, userId: user.id, blob })
+        const prepared = await preparePhotoUpload(file)
+        await uploadPhoto.mutateAsync({ entryId, entryDate: date, userId: user.id, ...prepared })
       } catch (err) {
         console.error('[PhotoPaste] FAILED:', err)
         setPhotoError(err instanceof Error ? err.message : 'Paste failed')
@@ -263,10 +263,10 @@ export default function EntryDetail() {
     return () => document.removeEventListener('paste', handlePaste, true)
   }, [pasteImage])
 
-  const handleDeletePhoto = async (photoId: string, storagePath: string) => {
+  const handleDeletePhoto = async (photoId: string, storagePath: string, printPath?: string | null) => {
     if (!date) return
     try {
-      await deletePhoto.mutateAsync({ photoId, storagePath, entryDate: date })
+      await deletePhoto.mutateAsync({ photoId, storagePath, printPath, entryDate: date })
     } catch (err) {
       console.error('Failed to delete photo:', err)
     }
@@ -763,7 +763,7 @@ export default function EntryDetail() {
                   />
                   {editingPhotos && (
                     <button
-                      onClick={() => handleDeletePhoto(photo.id, photo.storage_path)}
+                      onClick={() => handleDeletePhoto(photo.id, photo.storage_path, photo.print_path)}
                       className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-xs text-white cursor-pointer"
                       style={{ backgroundColor: '#E5534B' }}
                     >

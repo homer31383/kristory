@@ -4,6 +4,7 @@
 
 A shared daily journal PWA for Chris and Krista. Both users write their own section for each day, attach photos, audio and video, tag items across categories, keep a book/media Library, track recipes, organize trips, record baby milestones, and plan a shared baby registry. The app also exposes:
 - a separate baby feed at `/family` called **"The Babory"**: full view for the signed-in household, read-only view for extended family behind a server-checked family PIN;
+- `/book`, the **Book Builder** (signed-in household only): printable 7 x 7 in books curated from the journal. See "Book Builder" under Architecture Patterns.
 - `/shower`, the full shower page for a signed-in household member and a static "This page is closed" page for everyone else (also on its own custom domain), and the shower manager at `/shower/m` (sign-in required).
 
 **Household lockdown (branch `household-lockdown`, 2026-10-20).** The app signs in with Supabase Auth (email + password, Chris and Krista only, sign-ups disabled). The PIN gates and the user picker are gone. `supabase/lockdown/2026-10-20_kristory.sql` (written, applied by hand) turns RLS on for every Kristory-owned table with a single `public.is_household()` policy, revokes anon, and makes both buckets household-only for listing and writes (public object URLs still work). Rollback: `2026-10-20_kristory_rollback.sql`. `2026-10-20_kristory_setup.sql` created `babory_family_links` for the old private-link feature; `2026-10-20_babory_pin.sql` drops it.
@@ -11,6 +12,8 @@ A shared daily journal PWA for Chris and Krista. Both users write their own sect
 **Babory family PIN (branch `babory-pin`, 2026-10-20).** Run `supabase/lockdown/2026-10-20_babory_pin.sql` (rollback `..._babory_pin_rollback.sql`) BEFORE deploying the `babory-pin` build, and set `BABORY_SESSION_SECRET` on Vercel.
 
 **TODO:** Order Up must move to sign-in or a narrow function, then drop the anon select policy on baby_profile (`baby_profile_anon_read`) and the anon column grant `select (name, birth_date)`, both added by the lockdown SQL. Until then, note that Order Up currently runs `select *` on baby_profile, which fails under the column grant until it asks for `name,birth_date` explicitly.
+
+**Book builder (branch `book-builder`, 2026-10-30).** Run `supabase/migrations/034_book_builder.sql` BEFORE deploying the `book-builder` build: photo uploads write the new `entry_photos` columns and fail without them.
 
 **Registry retired (2026-10-20).** `/registry` is a static "This page is closed" page (`ClosedPage`), with no auth or database calls, no realtime and no nav entry. `src/views/Registry.tsx` and `src/registry/` were removed on 2026-10-21, so no `babylist_*` table is read or written at runtime.
 
@@ -44,7 +47,7 @@ These rules have caused real bugs in the past. Follow them.
    - Wrong: `sections:entry_sections(*, user:users(name))`
    - Used in `useEntries.ts`, `useTrips.ts`, `useItems.ts`, `useRecipes.ts`, `useBaby.ts`, `useFamilyFeed.ts`.
 
-2. **Photos resize to 1600px max edge, JPEG quality 0.85** before upload. See `resizeImage()` in `src/lib/helpers.ts`. The canvas dimensions use `Math.round(img.width * scale)` — do not change to `Math.floor` or you will get off-by-one rendering glitches on certain devices.
+2. **Photos resize to 1600px max edge, JPEG quality 0.85** before upload. See `resizeImage()` in `src/lib/helpers.ts`. Journal uploads go through `preparePhotoUpload()`, which also makes a 3000 px JPEG 0.9 print copy when the source is larger than 1600 px (book builder). The canvas dimensions use `Math.round(img.width * scale)`. Do not change to `Math.floor` or you will get off-by-one rendering glitches on certain devices.
 
 3. **Auto-save debounce is 1.5 seconds** for journal entry editing (`DEBOUNCE_SAVE_MS` in `src/lib/constants.ts`). Do not lower this — Supabase will rate-limit you under sustained typing.
 
@@ -116,7 +119,7 @@ Before the lockdown SQL runs, all tables have RLS **disabled**. After it, every 
 - `meals`, `meal_ingredients`, `grocery_categories`: owned by Axiom Tasks.
 - The `categories.user_id` column exists live but is in no migration.
 
-All migrations through `032` are applied in production (probed 2026-10-17).
+All migrations through `032` are applied in production (probed 2026-10-17). `034_book_builder.sql` (2026-10-30) also adds `entry_photos.width`, `height`, `print_path`, `print_width`, `print_height`.
 
 | Table | Purpose |
 |---|---|
@@ -141,6 +144,8 @@ All migrations through `032` are applied in production (probed 2026-10-17).
 | `babory_family_pin` | One row (`id = true`): scrypt `pin_hash`, `salt`, `version`, `updated_at`, `updated_by`. Service-role only (RLS on, no policies). `supabase/lockdown/2026-10-20_babory_pin.sql` |
 | `babory_family_attempts` | Wrong-PIN counters keyed `ip:<hmac>`, `dev:<hmac>` and `*global*`. Service-role only. Same file, with the `babory_*` security-definer functions |
 | `babory_family_lockouts` | One row per new lockout (`kind` 'device' or 'global'), pruned after 7 days. Service-role only. Same file |
+| `book_books` | Book builder books: title, `date_from`/`date_to` or `trip_id`, `include_authors` (both/chris/krista), `trim_size` ('7x7'), `bleed_in`, `page_limit` (140), `cover_choice` jsonb. Household RLS. Migration 034 |
+| `book_items` | One row per (book, entry): `sort_key`, `included`, `done`, `split_authors`, `hero_photo_id`, `photo_ids` jsonb `[{photo_id, focal_x, focal_y}]`, `hidden_text` jsonb `[{section_id, start, end, snippet, source_hash}]`, `layout_override`, `caption_override`, `pin_side`, `updated_by`. Realtime, REPLICA IDENTITY FULL. Migration 034 |
 | `app_settings` | Key-value store: app_pin, last_backup_date, backup_reminder, backup_frequency, shower_guest_count |
 | `baby_shower_event` | Single row: date/time/location/description/registry links + background presentation settings (007, 013–014, 023–027) |
 | `baby_shower_guests` | Guest list, RSVP, plus-one, dietary, side L/B, invite/gift/thank-you tracking, jsonb address (007–008, 011, 015) |
@@ -179,6 +184,8 @@ All migrations through `032` are applied in production (probed 2026-10-17).
 | `/baby` | `Baby` | Timeline / Milestones / Firsts / Names tabs, family share card |
 | `/registry` | `ClosedPage` | Retired: static "This page is closed", no auth, no database calls |
 | `/settings` | `Settings` | All settings + Backup & Restore |
+| `/book` | `BookBuilder` | Book Builder: books list and new-book setup (Lists page card) |
+| `/book/:bookId` | `BookReview` | Review contact sheet: page meter, filmstrip of spreads (desktop), quick skips, include/skip (swipe on phone), done, flags |
 | `/family` | `FamilyFeed` | **"The Babory"** branding, no Kristory chrome; household sign-in, or the family PIN screen then the read-only feed when nobody is signed in |
 | `/family/photos` | `FamilyPhotos` | Babory photo gallery; same access as `/family` |
 | `/shower` | `ShowerRoute` | `BabyShower` for a signed-in household member (`is_household()` check, reads through their session); everyone else gets the static `ClosedPage` and no shower queries run. No sign-in prompt (sign in at `/shower/m`) |
@@ -210,6 +217,7 @@ The `collapsible-content` CSS class uses `grid-template-rows: 0fr/1fr` for smoot
 ### Photo Storage
 Photos go to the public `kristory-photos` Supabase Storage bucket. URLs are built with `getStorageUrl(path)`.
 - **Journal photos:** `{entry_date}/{uuid}.jpg`. They keep their original folder after "Change Entry Date".
+- **Print copies:** `print/{entry_date}/{uuid}.jpg` (3000 px, JPEG 0.9), recorded in `entry_photos.print_path`. Only for uploads larger than 1600 px since migration 034. Deleting the photo removes both files. Not in the backup ZIP.
 - **Shower:** `shower-photos/{uuid}.{ext}` (guest uploads, full resolution), `shower/background.jpg`, `shower/tile.jpg`, and `gifts/{guest_id}.jpg`.
 
 The bucket's storage policies are not in any migration.
@@ -226,6 +234,17 @@ All use `claude-sonnet-5`, need `ANTHROPIC_API_KEY`, and have `maxDuration` 60/6
 
 ### Registry (retired, code removed)
 `/registry` renders `ClosedPage`. The registry code (`src/registry/`, `src/views/Registry.tsx`) was removed on 2026-10-21. The `babylist_*` tables and their migrations are untouched.
+
+### Book Builder
+A book is a layer of decisions on top of the journal; it never edits entries, sections or photos (it only fills in `entry_photos` size metadata).
+- **Pages are never stored.** `paginate()` in `src/book/paginate.ts` computes them from the items every time, for every screen. Page 1 is a right page. It adds a title page, a chapter opener per trip (always on a right page, blank inserted when needed), blanks for `pin_side`, and a trailing blank so the count is even. Two short photo-less days share a `two-quiet` page. Overflow text and photos continue on extra pages.
+- **Layouts** live in `src/book/layouts.ts`. The geometry is PROVISIONAL until the design files in `docs/book-layouts/` are built (phase 3); slot rectangles drive the DPI check and the review thumbnails. `chooseLayout()` picks by photo count and orientation (portrait-heavy means more than half portrait).
+- **Flags never remove anything:** no photo, over 180 words, DPI under 200 (soft) or 150 (hard), duplicate photo, text changed since a passage was hidden. Effective DPI uses the print copy's size when there is one, `object-fit: cover` math, and bleed on edges a slot touches.
+- **Hidden text** offsets point into the section's plain text from `sectionPlainText()` (`src/book/text.ts`); keep that function deterministic or saved offsets break. `source_hash` is FNV-1a of that text. When it no longer matches, the snippet is looked up again and the item is flagged.
+- **Draft:** every entry in range gets a row (`sort_key` = yyyymmdd * 10), photos in journal order, first as hero. Only entries with nothing for the chosen authors start skipped. Entries added later are drafted when the book is opened; items are never deleted when the range shrinks.
+- **Sync between Chris and Krista:** last save wins. Realtime on `book_items` merges only `included`, `done`, `updated_by`, `updated_at`, so an open editor is never overwritten; everything else arrives on focus refetch (`staleTime: 0`).
+- **Photo sizes:** photos from before 034 are measured in the browser the first time a book uses them, and the size is saved on `entry_photos`.
+- Book Builder pages use the `household_only` policy like every other table; no anon access, no server route.
 
 ### Audio & Video
 Clips go to the public `kristory-media` bucket as `{entry_id}/{uuid}.{ext}` (50MB cap), with video posters at `{entry_id}/{uuid}-thumb.jpg`. Uploads use XHR in `src/lib/media.ts` for progress, sending the session access token as `Authorization` and the browser key (`sb_publishable_`) as `apikey`. Players live in `src/components/media/`; use `preload="none"` on the family feed. Deleting a journal entry must call `deleteEntryMediaFiles(entryId)` first: the rows cascade but bucket files don't.

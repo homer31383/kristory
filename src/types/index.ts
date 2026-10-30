@@ -31,6 +31,13 @@ export interface EntryPhoto {
   storage_path: string
   display_order: number
   created_at: string
+  // Migration 034. Null on older photos until a book measures them.
+  width?: number | null
+  height?: number | null
+  /** 3000 px print copy, when one exists. */
+  print_path?: string | null
+  print_width?: number | null
+  print_height?: number | null
 }
 
 export type MediaFileType = 'video' | 'audio'
@@ -286,3 +293,63 @@ export interface BabyShowerMenuItem {
 }
 
 export type ThemeMode = 'light' | 'dark' | 'system'
+
+// ── Book builder (migration 034) ─────────────────────────────────────────────
+
+export type BookAuthors = 'both' | 'chris' | 'krista'
+
+export interface BookCoverChoice {
+  photo_id?: string | null
+  title?: string | null
+  subtitle?: string | null
+}
+
+export interface Book {
+  id: string
+  title: string
+  date_from: string | null
+  date_to: string | null
+  trip_id: string | null
+  include_authors: BookAuthors
+  trim_size: string
+  bleed_in: number
+  page_limit: number
+  cover_choice: BookCoverChoice | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** One photo placed in a book item. Focal point is 0..1 on each axis. */
+export interface BookPhotoSlot {
+  photo_id: string
+  focal_x?: number
+  focal_y?: number
+}
+
+/** A passage hidden in the book, as offsets into a section's plain text. */
+export interface BookHiddenRange {
+  section_id: string
+  start: number
+  end: number
+  snippet: string
+  source_hash: string
+}
+
+export interface BookItem {
+  id: string
+  book_id: string
+  entry_id: string
+  sort_key: number
+  included: boolean
+  done: boolean
+  split_authors: boolean
+  hero_photo_id: string | null
+  photo_ids: BookPhotoSlot[]
+  hidden_text: BookHiddenRange[]
+  layout_override: string | null
+  caption_override: string | null
+  pin_side: 'left' | 'right' | null
+  updated_by: string | null
+  updated_at: string
+}

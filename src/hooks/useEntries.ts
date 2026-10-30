@@ -167,13 +167,21 @@ export function useUploadPhoto() {
       entryDate,
       userId,
       blob,
+      width,
+      height,
+      print,
     }: {
       entryId: string
       entryDate: string
       userId: string
       blob: Blob
+      width?: number
+      height?: number
+      /** 3000 px print copy for the book builder (preparePhotoUpload). */
+      print?: { blob: Blob; width: number; height: number } | null
     }) => {
-      const fileName = `${entryDate}/${crypto.randomUUID()}.jpg`
+      const uuid = crypto.randomUUID()
+      const fileName = `${entryDate}/${uuid}.jpg`
       console.error(`[useUploadPhoto] Uploading to Storage: kristory-photos/${fileName} (${blob.size} bytes)`)
 
       const { error: uploadError } = await supabase.storage
@@ -186,9 +194,29 @@ export function useUploadPhoto() {
       }
       console.error('[useUploadPhoto] Storage upload succeeded, inserting into entry_photos...')
 
+      // The print copy is best effort: the journal photo still saves without it.
+      let printPath: string | null = null
+      if (print) {
+        const path = `print/${entryDate}/${uuid}.jpg`
+        const { error: printError } = await supabase.storage
+          .from('kristory-photos')
+          .upload(path, print.blob, { contentType: 'image/jpeg' })
+        if (printError) console.error('[useUploadPhoto] Print copy upload failed:', printError.message)
+        else printPath = path
+      }
+
       const { data, error } = await supabase
         .from('entry_photos')
-        .insert({ entry_id: entryId, user_id: userId, storage_path: fileName })
+        .insert({
+          entry_id: entryId,
+          user_id: userId,
+          storage_path: fileName,
+          width: width ?? null,
+          height: height ?? null,
+          print_path: printPath,
+          print_width: printPath ? print!.width : null,
+          print_height: printPath ? print!.height : null,
+        })
         .select()
         .single()
 
@@ -209,8 +237,17 @@ export function useDeletePhoto() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ photoId, storagePath }: { photoId: string; storagePath: string; entryDate: string }) => {
-      await supabase.storage.from('kristory-photos').remove([storagePath])
+    mutationFn: async ({
+      photoId,
+      storagePath,
+      printPath,
+    }: {
+      photoId: string
+      storagePath: string
+      printPath?: string | null
+      entryDate: string
+    }) => {
+      await supabase.storage.from('kristory-photos').remove(printPath ? [storagePath, printPath] : [storagePath])
       const { error } = await supabase.from('entry_photos').delete().eq('id', photoId)
       if (error) throw error
     },

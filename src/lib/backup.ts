@@ -65,6 +65,8 @@ async function fetchData(onProgress: ProgressCallback) {
     showerPhotos,
     showerMenu,
     journalMedia,
+    books,
+    bookItems,
   ] = await Promise.all([
     fetchAll('users', '*', 'name'),
     fetchAll('journal_entries', '*', 'entry_date'),
@@ -98,6 +100,8 @@ async function fetchData(onProgress: ProgressCallback) {
     fetchAll('baby_shower_photos', '*', 'created_at'),
     fetchAll('baby_shower_menu', '*', 'display_order'),
     fetchAllOptional('journal_media', '*', 'sort_order'),
+    fetchAllOptional('book_books', '*', 'created_at'),
+    fetchAllOptional('book_items', '*', 'sort_key'),
   ])
 
   return {
@@ -108,6 +112,7 @@ async function fetchData(onProgress: ProgressCallback) {
     familyPosts, familyPostPhotos, nameSuggestions, appSettings,
     showerEvent, showerGuests, showerTasks, showerSchedule, showerHelpers, showerPhotos, showerMenu,
     journalMedia,
+    books, bookItems,
   }
 }
 
@@ -115,6 +120,9 @@ async function fetchData(onProgress: ProgressCallback) {
 
 function buildDataJson(raw: Awaited<ReturnType<typeof fetchData>>) {
   const tripMap = new Map(raw.trips.map((t: any) => [t.id, t.title]))
+  const entryDateById = new Map<string, string>(raw.entries.map((e: any) => [e.id, e.entry_date]))
+  const photoPathById = new Map<string, string>(raw.photos.map((p: any) => [p.id, p.storage_path]))
+  const sectionAuthorById = new Map<string, string>(raw.sections.map((s: any) => [s.id, s.user?.name]))
 
   // Build entry -> trip lookup
   const entryTripMap = new Map<string, string>()
@@ -327,6 +335,43 @@ function buildDataJson(raw: Awaited<ReturnType<typeof fetchData>>) {
       photos: raw.showerPhotos,
       menu: raw.showerMenu,
     },
+    // Book builder (migration 034). Entries by date and photos by storage
+    // path, like the rest of this file.
+    books: raw.books.map((b: any) => ({
+      title: b.title,
+      date_from: b.date_from,
+      date_to: b.date_to,
+      trip: b.trip_id ? tripMap.get(b.trip_id) ?? null : null,
+      include_authors: b.include_authors,
+      trim_size: b.trim_size,
+      bleed_in: b.bleed_in,
+      page_limit: b.page_limit,
+      cover_choice: b.cover_choice,
+      items: raw.bookItems
+        .filter((i: any) => i.book_id === b.id)
+        .map((i: any) => ({
+          entry_date: entryDateById.get(i.entry_id) ?? null,
+          sort_key: i.sort_key,
+          included: i.included,
+          done: i.done,
+          split_authors: i.split_authors,
+          hero_photo: i.hero_photo_id ? photoPathById.get(i.hero_photo_id) ?? null : null,
+          photos: (i.photo_ids ?? []).map((slot: any) => ({
+            storage_path: photoPathById.get(slot.photo_id) ?? null,
+            focal_x: slot.focal_x,
+            focal_y: slot.focal_y,
+          })),
+          hidden_text: (i.hidden_text ?? []).map((r: any) => ({
+            author: sectionAuthorById.get(r.section_id) ?? null,
+            start: r.start,
+            end: r.end,
+            snippet: r.snippet,
+          })),
+          layout_override: i.layout_override,
+          caption_override: i.caption_override,
+          pin_side: i.pin_side,
+        })),
+    })),
     app_settings: settingsObj,
   }
 }
@@ -485,7 +530,12 @@ CREATE TABLE IF NOT EXISTS entry_photos (
   user_id uuid NOT NULL REFERENCES users(id),
   storage_path text NOT NULL,
   display_order integer DEFAULT 0,
-  created_at timestamptz DEFAULT now()
+  created_at timestamptz DEFAULT now(),
+  width integer,
+  height integer,
+  print_path text,
+  print_width integer,
+  print_height integer
 );
 grant select, insert, update, delete on public.entry_photos to anon, authenticated, service_role;
 
@@ -958,6 +1008,59 @@ CREATE INDEX IF NOT EXISTS journal_media_entry_id_idx ON journal_media(entry_id)
 ALTER TABLE journal_media DISABLE ROW LEVEL SECURITY;
 
 -- ============================================
+-- BOOK BUILDER (migration 034, household only)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS book_books (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  title text NOT NULL,
+  date_from date,
+  date_to date,
+  trip_id uuid REFERENCES trips(id) ON DELETE SET NULL,
+  include_authors text NOT NULL DEFAULT 'both' CHECK (include_authors IN ('both', 'chris', 'krista')),
+  trim_size text NOT NULL DEFAULT '7x7',
+  bleed_in numeric NOT NULL DEFAULT 0.125,
+  page_limit integer NOT NULL DEFAULT 140 CHECK (page_limit > 0),
+  cover_choice jsonb,
+  created_by uuid REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS book_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  book_id uuid NOT NULL REFERENCES book_books(id) ON DELETE CASCADE,
+  entry_id uuid NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+  sort_key integer NOT NULL DEFAULT 0,
+  included boolean NOT NULL DEFAULT true,
+  done boolean NOT NULL DEFAULT false,
+  split_authors boolean NOT NULL DEFAULT false,
+  hero_photo_id uuid REFERENCES entry_photos(id) ON DELETE SET NULL,
+  photo_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+  hidden_text jsonb NOT NULL DEFAULT '[]'::jsonb,
+  layout_override text,
+  caption_override text,
+  pin_side text CHECK (pin_side IN ('left', 'right')),
+  updated_by uuid REFERENCES users(id),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (book_id, entry_id)
+);
+CREATE INDEX IF NOT EXISTS book_items_book_id_idx ON book_items(book_id, sort_key);
+CREATE INDEX IF NOT EXISTS book_items_entry_id_idx ON book_items(entry_id);
+
+-- Needs public.is_household() (household lockdown). No anon access.
+ALTER TABLE book_books ENABLE ROW LEVEL SECURITY;
+ALTER TABLE book_items ENABLE ROW LEVEL SECURITY;
+CREATE POLICY household_only ON book_books FOR ALL TO authenticated
+  USING (public.is_household()) WITH CHECK (public.is_household());
+CREATE POLICY household_only ON book_items FOR ALL TO authenticated
+  USING (public.is_household()) WITH CHECK (public.is_household());
+grant select, insert, update, delete on public.book_books to authenticated, service_role;
+grant select, insert, update, delete on public.book_items to authenticated, service_role;
+ALTER TABLE book_items REPLICA IDENTITY FULL;
+ALTER PUBLICATION supabase_realtime ADD TABLE book_items;
+
+-- ============================================
 -- STORAGE BUCKET
 -- ============================================
 
@@ -1083,6 +1186,9 @@ a) MANUAL SQL APPROACH:
     24. baby_shower_menu
     25. journal_media (after uploading media files, see step 8;
         file_url = {SUPABASE_URL}/storage/v1/object/public/kristory-media/{file_path})
+    26. book_books, then book_items (data.json "books": match entries by
+        entry_date and photos by storage_path; print copies under print/
+        are not in this ZIP and can be made again from the originals)
 
 b) FUTURE RESTORE TOOL:
    - A "Restore from Backup" feature in Settings is planned

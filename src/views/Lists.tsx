@@ -488,6 +488,30 @@ export default function Lists() {
       {/* Baby section */}
       <BabyCard open={showBaby} onToggle={() => setShowBaby((v) => !v)} />
 
+      {/* Book builder */}
+      <button
+        onClick={() => navigate('/book')}
+        className="w-full text-left rounded-xl border p-4 flex items-center gap-3 transition-all duration-150 hover:shadow-md cursor-pointer mb-5"
+        style={{
+          backgroundColor: 'var(--bg-card)',
+          borderColor: 'var(--border-card)',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+        }}
+      >
+        <span className="text-2xl">📕</span>
+        <div className="flex-1">
+          <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+            Book Builder
+          </div>
+          <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+            Make a printed book from the journal
+          </div>
+        </div>
+        <svg className="w-4 h-4" style={{ color: 'var(--text-muted)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
+
       {/* Categories grid — defaults always show, even with 0 items. */}
       {(() => {
         const dbNonLibrary = categoryCounts.filter((cat) => !isLibraryCategory(cat.name))

@@ -60,6 +60,8 @@ Every other hostname gets the full route table below. `vercel.json` has no domai
 | `/baby` | `Baby` | ✅ | ✅ |
 | `/registry` | `ClosedPage` (retired) | ❌ public, static | — |
 | `/settings` | `Settings` | ✅ | ✅ |
+| `/book` | `BookBuilder` (books list, new-book setup) | ✅ | ✅ |
+| `/book/:bookId` | `BookReview` (contact sheet) | ✅ | ✅ |
 
 `RequireAuth` shows the sign-in screen until a household member is signed in and matched to a `users` row (it also calls `rpc('is_household')`). The session persists in localStorage (`kristory-auth`). Sign out is in Settings > Account; it calls `supabase.removeAllChannels()` and the React Query cache is cleared.
 
@@ -241,6 +243,16 @@ All app tables run with **RLS disabled** (no Supabase Auth; the client is truste
 **`032_journal_media_file_name.sql`** *(uncommitted)*
 - `journal_media.file_name text`.
 - Applied to production 2026-10-17 (probed: 200).
+
+**`034_book_builder.sql`** (2026-10-30, branch `book-builder`; run before deploying it)
+- `entry_photos` gains `width int`, `height int` (size of `storage_path`), `print_path text`, `print_width int`, `print_height int` (3000 px print copy).
+- **`book_books`:** `id PK`, `title NOT NULL`, `date_from date`, `date_to date`, `trip_id → trips SET NULL`, `include_authors text NOT NULL DEFAULT 'both' CHECK IN ('both','chris','krista')`, `trim_size text NOT NULL DEFAULT '7x7'`, `bleed_in numeric NOT NULL DEFAULT 0.125`, `page_limit int NOT NULL DEFAULT 140 CHECK > 0`, `cover_choice jsonb`, `created_by → users`, `created_at`, `updated_at`.
+- **`book_items`:**
+  - Columns: `id PK`, `book_id NOT NULL → book_books CASCADE`, `entry_id NOT NULL → journal_entries CASCADE`, `sort_key int NOT NULL DEFAULT 0`, `included bool NOT NULL DEFAULT true`, `done bool NOT NULL DEFAULT false`, `split_authors bool NOT NULL DEFAULT false`, `hero_photo_id → entry_photos SET NULL`, `photo_ids jsonb NOT NULL DEFAULT '[]'` (`[{photo_id, focal_x, focal_y}]`), `hidden_text jsonb NOT NULL DEFAULT '[]'` (`[{section_id, start, end, snippet, source_hash}]`), `layout_override text`, `caption_override text`, `pin_side text CHECK IN ('left','right')`, `updated_by → users`, `updated_at`.
+  - `UNIQUE(book_id, entry_id)`; indexes `book_items_book_id_idx (book_id, sort_key)`, `book_items_entry_id_idx`.
+  - REPLICA IDENTITY FULL; added to `supabase_realtime`.
+- Both tables: RLS on, `household_only` policy, anon revoked, `select, insert, update, delete` to `authenticated, service_role`.
+- Pages are not stored; `src/book/paginate.ts` computes them.
 
 ---
 
@@ -484,6 +496,7 @@ Created in 001. URL builder: `getStorageUrl()` in `src/lib/helpers.ts`.
 | `shower/background.jpg` | Shower hero/background (upsert; old file removed first) |
 | `shower/tile.jpg` | Shower tile texture (upsert) |
 | `gifts/{guest_id}.jpg` | Guest gift photos (upsert) |
+| `print/{entry_date}/{uuid}.jpg` | Print copy (3000 px, JPEG 0.9) of a journal photo larger than 1600 px, uploads since migration 034 (`entry_photos.print_path`). Removed with the photo |
 
 `baby_milestones.photo_path` is only ever read; no code writes it.
 
@@ -613,6 +626,7 @@ d716b41 Custom item editing + image field + RLS safety on 028
 - **`app_pin` is skipped** when writing `app_settings` to data.json (and the lockdown deletes the row). Still treat backup ZIPs as sensitive.
 
 ### Files not in the ZIP
+- **Book print copies** (`print/*`). The book rows are in data.json under `books`.
 - **All shower images:** guest photos `shower-photos/*`, `shower/background.jpg`, `shower/tile.jpg`, gift photos `gifts/*`. The rows are in data.json, but the files are not downloaded.
 - **`baby_milestones.photo_path` files.**
 - **Failed photo or media downloads are skipped silently.** The ZIP doesn't list what's missing.

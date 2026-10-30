@@ -28,6 +28,8 @@ import LibraryRiver from './views/LibraryRiver'
 import ClosedPage from './views/ClosedPage'
 import ShowerManage from './views/ShowerManage'
 import BabyShower from './views/BabyShower'
+import BookBuilder from './views/BookBuilder'
+import BookReview from './views/BookReview'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -153,6 +155,8 @@ function AppRoutes() {
         <Route path="/trips/new" element={<CreateTrip />} />
         <Route path="/trips/:tripId" element={<TripDetail />} />
         <Route path="/baby" element={<Baby />} />
+        <Route path="/book" element={<BookBuilder />} />
+        <Route path="/book/:bookId" element={<BookReview />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
     </Routes>
