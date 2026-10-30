@@ -128,6 +128,13 @@ export default function BookReview() {
           Preview
         </button>
         <button
+          onClick={() => navigate(`/book/${book.id}/crops`)}
+          className="px-3 py-2 rounded-lg text-xs font-medium border cursor-pointer"
+          style={{ borderColor: 'var(--border-card)', color: 'var(--text-secondary)' }}
+        >
+          Crops
+        </button>
+        <button
           onClick={() => navigate(`/book/${book.id}/print`)}
           className="hidden md:block px-3 py-2 rounded-lg text-xs font-medium border cursor-pointer"
           style={{ borderColor: 'var(--border-card)', color: 'var(--text-secondary)' }}
@@ -221,6 +228,7 @@ export default function BookReview() {
               onToggleIncluded={() => setIncluded([v.item.id], !v.item.included)}
               onToggleDone={() => updateItems.mutate({ ids: [v.item.id], patch: { done: !v.item.done } })}
               onOpenJournal={() => navigate(`/journal/${v.entry.entry_date}`)}
+              onEdit={() => navigate(`/book/${book.id}/entry/${v.item.id}`)}
             />
           ))}
         </div>
@@ -470,6 +478,7 @@ function EntryRow({
   onToggleIncluded,
   onToggleDone,
   onOpenJournal,
+  onEdit,
 }: {
   view: ItemView
   flags: ItemFlag[]
@@ -478,6 +487,7 @@ function EntryRow({
   onToggleIncluded: () => void
   onToggleDone: () => void
   onOpenJournal: () => void
+  onEdit: () => void
 }) {
   const { item, entry } = view
   const [dx, setDx] = useState(0)
@@ -578,6 +588,14 @@ function EntryRow({
               </div>
             )}
           </div>
+
+          <button
+            onClick={onEdit}
+            className="px-2.5 py-1.5 rounded-lg border text-xs font-medium flex-shrink-0 cursor-pointer"
+            style={{ borderColor: 'var(--border-card)', color: 'var(--text-primary)' }}
+          >
+            Edit
+          </button>
 
           {/* Done */}
           <label className="flex flex-col items-center gap-0.5 flex-shrink-0 cursor-pointer">

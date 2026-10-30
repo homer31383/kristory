@@ -1,3 +1,5 @@
+import { useContext } from 'react'
+import { PhotoSourceContext } from './measure'
 import type { CoverData } from './cover'
 import { Decor, Dot, Leaf, PageFrame, Sprig } from './parts'
 import { BG, photoUrl } from './style'
@@ -8,12 +10,13 @@ import { COLOR, FONT, alpha } from '../tokens'
  * photo behind, gold K with a sketched outline (filters bk-sk1, bk-sk2).
  */
 export default function CoverScript({ cover }: { cover: CoverData }) {
+  const source = useContext(PhotoSourceContext)
   const photo = cover.frontPhoto
   return (
     <PageFrame background={BG.navy('50% 47%', '72% 64%')} color={COLOR.cream}>
       {photo && (
         <img
-          src={photoUrl(photo.photo)}
+          src={photoUrl(photo.photo, source)}
           alt=""
           aria-hidden="true"
           style={{

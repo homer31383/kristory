@@ -76,6 +76,18 @@ export const SHADE = {
   emptySlot: 'rgba(127,140,170,0.18)',
 } as const
 
+/**
+ * The mat behind a photo zoomed out below fill: the page color, with a thin
+ * edge and a soft shadow on the photo, as on the Milestone frame. Light
+ * pages (white, pale) get a white mat, dark pages a navy one.
+ */
+export const MAT = {
+  light: { color: COLOR.white, edge: COLOR.ruleSoft, edgeWidth: 1, shadow: `0 6px 16px ${alpha(COLOR.ink, 0.16)}` },
+  dark: { color: COLOR.navyDeep, edge: COLOR.white, edgeWidth: 3, shadow: `0 10px 28px ${SHADE.shadowSoft}` },
+} as const
+
+export type MatTone = keyof typeof MAT
+
 export const FONT = {
   script: "'Great Vibes', cursive",
   body: 'Lora, Georgia, serif',

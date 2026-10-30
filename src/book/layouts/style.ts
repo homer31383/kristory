@@ -3,6 +3,7 @@ import { format, parse } from 'date-fns'
 import { getStorageUrl } from '../../lib/helpers'
 import type { AuthorKey } from '../model'
 import type { PagePhoto } from '../paginate'
+import type { PhotoSource } from './measure'
 import { COLOR } from '../tokens'
 
 /** Style values and helpers shared by the page layouts (see parts.tsx). */
@@ -36,8 +37,8 @@ export function scriptDate(entryDate: string | undefined, pattern = 'MMMM d') {
   return entryDate ? format(parse(entryDate, 'yyyy-MM-dd', new Date()), pattern) : ''
 }
 
-/** The print copy when there is one, else the stored photo. */
-export function photoUrl(p: PagePhoto['photo']): string {
-  return getStorageUrl(p.print_path || p.storage_path)
+/** For print, the print copy when there is one; on screen, the display copy. */
+export function photoUrl(p: PagePhoto['photo'], source: PhotoSource = 'print'): string {
+  return getStorageUrl(source === 'print' ? p.print_path || p.storage_path : p.storage_path)
 }
 

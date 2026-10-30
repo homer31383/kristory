@@ -1,10 +1,11 @@
 import { useContext, type CSSProperties, type ReactNode } from 'react'
 import { MARK_BOLD, MARK_ITALIC, tokenRuns } from '../text'
-import type { AuthorKey } from '../model'
+import { photoPixels, type AuthorKey } from '../model'
 import type { BookPage, PageBlock, PagePhoto } from '../paginate'
-import { MeasureContext, TextScaleContext } from './measure'
+import { MeasureContext, PageContext, PhotoSourceContext } from './measure'
 import { photoUrl, pretty, ruleColor, scriptDate, type Tone } from './style'
-import { COLOR, FONT, SHADE, TYPE } from '../tokens'
+import { COLOR, FONT, MAT, SHADE, TYPE } from '../tokens'
+import { clampZoom, photoBox } from '../crop'
 
 /**
  * Pieces shared by the page layouts. Every value here is copied from the
@@ -170,7 +171,7 @@ export function TextBlocks({
   dropCap?: boolean
   startIndex?: number
 }) {
-  const scale = useContext(TextScaleContext)
+  const scale = useContext(PageContext).textScale
   return (
     <>
       {blocks.map((b, i) => {
@@ -276,14 +277,43 @@ export function Photo({
   style?: CSSProperties
 }) {
   const measuring = useContext(MeasureContext)
+  const { mat } = useContext(PageContext)
+  const source = useContext(PhotoSourceContext)
   if (!photo || measuring) {
     if (photo) return <div style={{ width, height, flexShrink: 0, ...style }} />
     // A slot the entry has no photo for (a layout picked by hand).
     return <div style={{ width, height, background: SHADE.emptySlot, ...style }} />
   }
+  const px = photoPixels(photo.photo)
+  if (px && clampZoom(photo.zoom) < 1) {
+    // Zoomed out below fill: the photo on a mat in the page color.
+    const box = photoBox(px, { w: width, h: height }, photo.focalX, photo.focalY, photo.zoom)
+    const m = MAT[mat]
+    return (
+      <div style={{ position: 'relative', width, height, flexShrink: 0, overflow: 'hidden', background: m.color, ...style }}>
+        <img
+          src={photoUrl(photo.photo, source)}
+          alt=""
+          decoding="async"
+          style={{
+            position: 'absolute',
+            left: box.x,
+            top: box.y,
+            width: box.w,
+            height: box.h,
+            maxWidth: 'none',
+            boxSizing: 'border-box',
+            border: `${m.edgeWidth}px solid ${m.edge}`,
+            boxShadow: m.shadow,
+            display: 'block',
+          }}
+        />
+      </div>
+    )
+  }
   return (
     <img
-      src={photoUrl(photo.photo)}
+      src={photoUrl(photo.photo, source)}
       alt=""
       width={width}
       height={height}

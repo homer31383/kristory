@@ -4,6 +4,7 @@ import { useBookPagination } from '../hooks/useBookPagination'
 import { useUpdateBook } from '../hooks/useBooks'
 import { BookCoverView, BookDefs, BookPageView, type CoverStyle } from '../book/layouts'
 import { PAGE_PX } from '../book/layouts/parts'
+import { PhotoSourceContext } from '../book/layouts/measure'
 
 type Slot = { key: string; label: string; node: ReactNode } | null
 
@@ -122,6 +123,8 @@ export default function BookPreview() {
         }}
       >
         {scale > 0 && (
+          // The screen only needs the display copies, not the print copies.
+          <PhotoSourceContext.Provider value="screen">
           <div style={{ display: 'flex', gap }}>
             {spread.map((s, i) => (
               <div key={s?.key ?? `empty-${i}`} style={{ width: PAGE_PX * scale, height: PAGE_PX * scale, overflow: 'hidden', boxShadow: s ? '0 2px 12px rgba(0,0,0,0.45)' : 'none' }}>
@@ -129,6 +132,7 @@ export default function BookPreview() {
               </div>
             ))}
           </div>
+          </PhotoSourceContext.Provider>
         )}
       </div>
 

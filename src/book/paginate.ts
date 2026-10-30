@@ -5,7 +5,6 @@ import {
   DPI_SOFT,
   LAYOUTS,
   chooseLayout,
-  effectiveDpi,
   isEntryLayout,
   slotInches,
   trimInches,
@@ -13,6 +12,7 @@ import {
 } from './catalog'
 import { tokensText, type Token } from './text'
 import { TYPE } from './tokens'
+import { CROP_HARD, CROP_SOFT, DEFAULT_FOCAL, clampZoom, cropLabel, cropReading, shownDpi, type CropReading } from './crop'
 import {
   isPortrait,
   photoPixels,
@@ -41,6 +41,8 @@ export interface PagePhoto {
   photo: BookPhoto
   focalX: number
   focalY: number
+  /** Fit zoom, 1 (fill) to 0 (whole photo on a mat); see src/book/crop.ts. */
+  zoom: number
 }
 
 /** One day on a two-quiet page. */
@@ -87,7 +89,7 @@ export interface BookPage {
  */
 export type FitFn = (page: BookPage) => number
 
-export type FlagKind = 'no-photo' | 'long-text' | 'low-dpi' | 'duplicate-photo' | 'text-changed'
+export type FlagKind = 'no-photo' | 'long-text' | 'low-dpi' | 'crop-loss' | 'duplicate-photo' | 'text-changed'
 
 export interface ItemFlag {
   kind: FlagKind
@@ -142,7 +144,12 @@ function firstSentence(text: string): string {
 
 function slotFor(v: ItemView, photo: BookPhoto): PagePhoto {
   const slot = v.photos.find((p) => p.photo.id === photo.id)?.slot
-  return { photo, focalX: slot?.focal_x ?? 0.5, focalY: slot?.focal_y ?? 0.5 }
+  return {
+    photo,
+    focalX: slot?.focal_x ?? DEFAULT_FOCAL,
+    focalY: slot?.focal_y ?? DEFAULT_FOCAL,
+    zoom: clampZoom(slot?.zoom),
+  }
 }
 
 interface Cursor {
@@ -351,7 +358,7 @@ export function paginate(book: Book, views: ItemView[], bookTrip?: BookTrip | nu
       layout: 'opener',
       itemIds: [],
       photoIds: [],
-      photos: cover ? [{ photo: cover, focalX: 0.5, focalY: 0.5 }] : [],
+      photos: cover ? [{ photo: cover, focalX: DEFAULT_FOCAL, focalY: DEFAULT_FOCAL, zoom: 1 }] : [],
       blocks: [],
       badges: [],
       facts: [],
@@ -430,23 +437,57 @@ export function paginate(book: Book, views: ItemView[], bookTrip?: BookTrip | nu
   }
 }
 
-function flagItems(book: Book, views: ItemView[], pages: BookPage[]): Map<string, ItemFlag[]> {
+/** One placed photo's print readings at its current zoom and focal point. */
+export interface PhotoReading {
+  index: number
+  photoId: string
+  /** Effective DPI at the shown size; null when the photo size is unknown. */
+  dpi: number | null
+  crop: CropReading | null
+}
+
+/** DPI and crop loss for every photo on a page, as placed. */
+export function photoReadings(book: Book, page: BookPage): PhotoReading[] {
   const trim = trimInches(book.trim_size)
   const bleed = Number(book.bleed_in) || 0
+  const slots = LAYOUTS[page.layout].slots
+  return page.photos.map((p, index) => {
+    const px = photoPixels(p.photo)
+    const slot = slots[index]
+    if (!px || !slot) return { index, photoId: p.photo.id, dpi: null, crop: null }
+    const inches = slotInches(slot, trim, bleed)
+    return {
+      index,
+      photoId: p.photo.id,
+      dpi: shownDpi(px, inches, p.zoom),
+      crop: cropReading(px, inches, p.focalX, p.focalY, p.zoom),
+    }
+  })
+}
 
-  // Lowest DPI each item's photos get in the slots they landed in.
+/** The low-DPI flag for a DPI, or null when it prints well. */
+export function dpiFlag(dpi: number): ItemFlag | null {
+  if (dpi >= DPI_SOFT) return null
+  return { kind: 'low-dpi', severity: dpi < DPI_HARD ? 'hard' : 'soft', label: `${Math.round(dpi)} DPI` }
+}
+
+/** The crop-loss flag for a reading, or null when little is cut off. */
+export function cropFlag(r: CropReading): ItemFlag | null {
+  if (r.lost <= CROP_SOFT) return null
+  return { kind: 'crop-loss', severity: r.lost > CROP_HARD ? 'hard' : 'soft', label: cropLabel(r) }
+}
+
+function flagItems(book: Book, views: ItemView[], pages: BookPage[]): Map<string, ItemFlag[]> {
+  // Lowest DPI and largest crop loss each item's photos get where they landed.
   const minDpi = new Map<string, number>()
+  const worstCrop = new Map<string, CropReading>()
   for (const page of pages) {
-    const slots = LAYOUTS[page.layout].slots
-    page.photos.forEach(({ photo }, j) => {
-      const px = photoPixels(photo)
-      const slot = slots[j]
-      if (!px || !slot) return
-      const dpi = effectiveDpi(px, slotInches(slot, trim, bleed))
+    for (const r of photoReadings(book, page)) {
       for (const itemId of page.itemIds) {
-        minDpi.set(itemId, Math.min(minDpi.get(itemId) ?? Infinity, dpi))
+        if (r.dpi !== null) minDpi.set(itemId, Math.min(minDpi.get(itemId) ?? Infinity, r.dpi))
+        if (r.crop && r.crop.lost > (worstCrop.get(itemId)?.lost ?? -1)) worstCrop.set(itemId, r.crop)
       }
-    })
+    }
   }
 
   // Photos used by more than one included item.
@@ -462,13 +503,11 @@ function flagItems(book: Book, views: ItemView[], pages: BookPage[]): Map<string
     if (v.photos.length === 0) flags.push({ kind: 'no-photo', severity: 'soft', label: 'No photo' })
     if (v.words > LONG_TEXT_WORDS) flags.push({ kind: 'long-text', severity: 'soft', label: `${v.words} words` })
     const dpi = minDpi.get(v.item.id)
-    if (dpi !== undefined && dpi < DPI_SOFT) {
-      flags.push({
-        kind: 'low-dpi',
-        severity: dpi < DPI_HARD ? 'hard' : 'soft',
-        label: `${Math.round(dpi)} DPI`,
-      })
-    }
+    const dpiF = dpi !== undefined ? dpiFlag(dpi) : null
+    if (dpiF) flags.push(dpiF)
+    const crop = worstCrop.get(v.item.id)
+    const cropF = crop ? cropFlag(crop) : null
+    if (cropF) flags.push(cropF)
     if (v.item.included && v.photos.some((p) => (uses.get(p.photo.id) ?? 0) > 1)) {
       flags.push({ kind: 'duplicate-photo', severity: 'soft', label: 'Duplicate photo' })
     }

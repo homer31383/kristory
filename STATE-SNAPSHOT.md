@@ -64,6 +64,8 @@ Every other hostname gets the full route table below. `vercel.json` has no domai
 | `/book/:bookId` | `BookReview` (contact sheet) | ✅ | ✅ |
 | `/book/:bookId/preview` | `BookPreview` (spread viewer, no Layout) | ✅ | ✅ |
 | `/book/:bookId/print` | `BookPrint` (7 x 7 in sheets for Save as PDF, no Layout) | ✅ | ✅ |
+| `/book/:bookId/entry/:itemId` | `BookEntryEditor` (one entry: photos, crop, layout, caption, hidden text; no Layout) | ✅ | ✅ |
+| `/book/:bookId/crops` | `BookCrops` (every placed photo, flagged first, crop with live page; no Layout) | ✅ | ✅ |
 
 `RequireAuth` shows the sign-in screen until a household member is signed in and matched to a `users` row (it also calls `rpc('is_household')`). The session persists in localStorage (`kristory-auth`). Sign out is in Settings > Account; it calls `supabase.removeAllChannels()` and the React Query cache is cleared.
 
@@ -250,7 +252,7 @@ All app tables run with **RLS disabled** (no Supabase Auth; the client is truste
 - `entry_photos` gains `width int`, `height int` (size of `storage_path`), `print_path text`, `print_width int`, `print_height int` (3000 px print copy).
 - **`book_books`:** `id PK`, `title NOT NULL`, `date_from date`, `date_to date`, `trip_id → trips SET NULL`, `include_authors text NOT NULL DEFAULT 'both' CHECK IN ('both','chris','krista')`, `trim_size text NOT NULL DEFAULT '7x7'`, `bleed_in numeric NOT NULL DEFAULT 0.125`, `page_limit int NOT NULL DEFAULT 140 CHECK > 0`, `cover_choice jsonb`, `created_by → users`, `created_at`, `updated_at`.
 - **`book_items`:**
-  - Columns: `id PK`, `book_id NOT NULL → book_books CASCADE`, `entry_id NOT NULL → journal_entries CASCADE`, `sort_key int NOT NULL DEFAULT 0`, `included bool NOT NULL DEFAULT true`, `done bool NOT NULL DEFAULT false`, `split_authors bool NOT NULL DEFAULT false`, `hero_photo_id → entry_photos SET NULL`, `photo_ids jsonb NOT NULL DEFAULT '[]'` (`[{photo_id, focal_x, focal_y}]`), `hidden_text jsonb NOT NULL DEFAULT '[]'` (`[{section_id, start, end, snippet, source_hash}]`), `layout_override text`, `caption_override text`, `pin_side text CHECK IN ('left','right')`, `updated_by → users`, `updated_at`.
+  - Columns: `id PK`, `book_id NOT NULL → book_books CASCADE`, `entry_id NOT NULL → journal_entries CASCADE`, `sort_key int NOT NULL DEFAULT 0`, `included bool NOT NULL DEFAULT true`, `done bool NOT NULL DEFAULT false`, `split_authors bool NOT NULL DEFAULT false`, `hero_photo_id → entry_photos SET NULL`, `photo_ids jsonb NOT NULL DEFAULT '[]'` (`[{photo_id, focal_x, focal_y, zoom}]`; `zoom` added in code 2026-10-30, no migration since it is jsonb), `hidden_text jsonb NOT NULL DEFAULT '[]'` (`[{section_id, start, end, snippet, source_hash}]`), `layout_override text`, `caption_override text`, `pin_side text CHECK IN ('left','right')`, `updated_by → users`, `updated_at`.
   - `UNIQUE(book_id, entry_id)`; indexes `book_items_book_id_idx (book_id, sort_key)`, `book_items_entry_id_idx`.
   - REPLICA IDENTITY FULL; added to `supabase_realtime`.
 - Both tables: RLS on, `household_only` policy, anon revoked, `select, insert, update, delete` to `authenticated, service_role`.

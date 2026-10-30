@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
-import { getStorageUrl } from '../lib/helpers'
+import { getStorageUrl, PRINT_COPY_MAX_EDGE, PRINT_COPY_QUALITY, resizeImageSized } from '../lib/helpers'
 import { useUser } from './useUser'
-import type { Book, BookItem, User } from '../types'
-import { draftItem, type BookEntry, type BookMilestone } from '../book/model'
+import type { Book, BookItem, EntryPhoto, User } from '../types'
+import { draftItem, photoPixels, type BookEntry, type BookMilestone, type BookPhoto } from '../book/model'
 
 const BOOK_ENTRY_SELECT =
   'id, entry_date, ' +
@@ -404,4 +404,125 @@ export function usePhotoSizeBackfill(book: Book | null | undefined, entries: Boo
   }, [runKey, loaded, queryClient])
 
   return progress
+}
+
+// ── Photos from outside the book's entries ───────────────────────────────────
+
+type PhotoRow = EntryPhoto & { entry: { entry_date: string } | null }
+
+function withDate(rows: PhotoRow[]): BookPhoto[] {
+  return rows
+    .filter((r) => r.entry)
+    .map(({ entry, ...p }) => ({ ...p, entry_date: entry!.entry_date }))
+}
+
+/**
+ * Journal photos between two dates (inclusive), oldest first: the editor's
+ * "Nearby days" and "Library" sections. Only entry photos; Library item
+ * covers are low resolution and never offered.
+ */
+export function useJournalPhotos(from: string | null, to: string | null) {
+  return useQuery({
+    queryKey: ['journal-photos', from, to],
+    enabled: !!from && !!to,
+    staleTime: 1000 * 60 * 5,
+    queryFn: async () => {
+      const entries = await fetchPaged<{ entry_date: string; photos: EntryPhoto[] }>(
+        (start, end) =>
+          supabase
+            .from('journal_entries')
+            .select('entry_date, photos:entry_photos!entry_id(*)')
+            .gte('entry_date', from!)
+            .lte('entry_date', to!)
+            .order('entry_date')
+            .range(start, end),
+      )
+      return entries.flatMap((e) =>
+        [...e.photos].sort((a, b) => a.display_order - b.display_order).map((p) => ({ ...p, entry_date: e.entry_date })),
+      )
+    },
+  })
+}
+
+/** Photos a book's items use that belong to entries outside the book (nearby days, library). */
+export function useBookExtraPhotos(ids: string[]) {
+  const key = [...ids].sort()
+  return useQuery({
+    queryKey: ['book-extra-photos', key],
+    enabled: key.length > 0,
+    queryFn: async () => {
+      const out: BookPhoto[] = []
+      for (const part of chunk(key, 150)) {
+        const { data, error } = await supabase
+          .from('entry_photos')
+          .select('*, entry:journal_entries!entry_id(entry_date)')
+          .in('id', part)
+        if (error) throw error
+        out.push(...withDate((data ?? []) as unknown as PhotoRow[]))
+      }
+      return out
+    },
+  })
+}
+
+/**
+ * A photo without a saved size (uploaded before migration 034) gets measured
+ * and saved when it is placed in a book, so orientation and DPI work.
+ */
+export async function ensurePhotoSize(photo: EntryPhoto): Promise<void> {
+  if (photo.width && photo.height) return
+  const size = await loadImageSize(getStorageUrl(photo.storage_path))
+  if (!size) return
+  const { error } = await supabase.from('entry_photos').update({ width: size.w, height: size.h }).eq('id', photo.id)
+  if (error) console.error('[book] Could not save photo size:', error.message)
+}
+
+/** Refetches everything that holds photo rows after one changes. */
+export function invalidateBookPhotos(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: ['book-entries'] })
+  queryClient.invalidateQueries({ queryKey: ['book-extra-photos'] })
+  queryClient.invalidateQueries({ queryKey: ['journal-photos'] })
+}
+
+/** Shapes further apart than this are not the same photo. */
+const SAME_SHAPE_TOLERANCE = 0.03
+
+/**
+ * "Replace with original" for an older photo the book uses: makes a 3000 px
+ * print copy from the original file and records it on entry_photos. The
+ * journal photo (storage_path) is not touched. A file whose shape does not
+ * match the photo is refused, so a wrong pick cannot slip into the book.
+ */
+export function useReplaceWithOriginal() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ photo, file }: { photo: BookPhoto; file: File }) => {
+      const print = await resizeImageSized(file, PRINT_COPY_MAX_EDGE, PRINT_COPY_QUALITY)
+      const known = photoPixels(photo) ?? (await loadImageSize(getStorageUrl(photo.storage_path)))
+      if (known) {
+        const a = known.w / known.h
+        const b = print.width / print.height
+        if (Math.abs(a - b) / a > SAME_SHAPE_TOLERANCE) {
+          throw new Error('That file is a different shape from this photo. Pick the original of the same photo.')
+        }
+      }
+      if (Math.max(print.width, print.height) <= Math.max(known?.w ?? 0, known?.h ?? 0)) {
+        throw new Error('That file is no larger than the photo the book already has.')
+      }
+      const path = `print/${photo.entry_date}/${crypto.randomUUID()}.jpg`
+      const { error: upErr } = await supabase.storage.from('kristory-photos').upload(path, print.blob, { contentType: 'image/jpeg' })
+      if (upErr) throw upErr
+      const { error } = await supabase
+        .from('entry_photos')
+        .update({ print_path: path, print_width: print.width, print_height: print.height })
+        .eq('id', photo.id)
+      if (error) {
+        await supabase.storage.from('kristory-photos').remove([path])
+        throw error
+      }
+      // The old print copy, if any, is no longer referenced.
+      if (photo.print_path) await supabase.storage.from('kristory-photos').remove([photo.print_path])
+    },
+    onSuccess: () => invalidateBookPhotos(queryClient),
+  })
 }

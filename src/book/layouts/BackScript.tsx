@@ -1,3 +1,5 @@
+import { useContext } from 'react'
+import { PhotoSourceContext } from './measure'
 import type { CoverData } from './cover'
 import { Decor, Dot, Leaf, PageFrame, Sprig } from './parts'
 import { BG, balance, photoUrl } from './style'
@@ -5,6 +7,7 @@ import { COLOR, FONT, alpha } from '../tokens'
 
 /** BackScript.dc.html: cover option B, back. The quote's last two words are set in gold script. */
 export default function BackScript({ cover }: { cover: CoverData }) {
+  const source = useContext(PhotoSourceContext)
   const photo = cover.backPhoto
   const words = cover.backQuote.trim().split(/\s+/)
   const tail = words.length > 2 ? words.slice(-2).join(' ') : ''
@@ -13,7 +16,7 @@ export default function BackScript({ cover }: { cover: CoverData }) {
     <PageFrame background={BG.navy('50% 47%', '72% 64%')} color={COLOR.cream}>
       {photo && (
         <img
-          src={photoUrl(photo.photo)}
+          src={photoUrl(photo.photo, source)}
           alt=""
           aria-hidden="true"
           style={{

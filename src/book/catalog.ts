@@ -16,6 +16,8 @@
  * real pages can be measured (src/book/fit.ts).
  */
 
+import type { MatTone } from './tokens'
+
 export type LayoutId =
   | 'cover-a'
   | 'back-a'
@@ -115,6 +117,12 @@ export const LAYOUTS: Record<LayoutId, LayoutDef> = {
   'navy-panel': { id: 'navy-panel', label: 'Photo with navy panel', file: 'NavyPanel.dc.html', slots: [px(0, 0, 672, 672)], textBox: px(60, 430, 564, 170), text: 'body', facts: false, textWords: 45, tone: 'photo' },
 }
 
+/** The mat a zoomed-out photo sits on: white on light pages, navy on dark ones. */
+export function matTone(layout: LayoutId): MatTone {
+  const tone = LAYOUTS[layout].tone
+  return tone === 'white' || tone === 'pale' ? 'light' : 'dark'
+}
+
 /** Layouts an entry page can use (for the phase 2 picker and overrides). */
 export const ENTRY_LAYOUTS: LayoutId[] = [
   'text-day', 'photo-day', 'two-authors', 'milestone', 'full-bleed', 'band-text', 'grid-day',
@@ -147,13 +155,6 @@ export function slotInches(slot: SlotRect, trim: { w: number; h: number }, bleed
   return { w, h }
 }
 
-/**
- * Effective DPI of a photo in a slot with object-fit: cover. The image is
- * scaled until it covers both sides, so the tighter side sets the DPI.
- */
-export function effectiveDpi(px: { w: number; h: number }, slotIn: { w: number; h: number }): number {
-  return Math.min(px.w / slotIn.w, px.h / slotIn.h)
-}
 
 /** Warn hard under 150 DPI, softly under 200 (camera exports sit near 237). */
 export const DPI_HARD = 150

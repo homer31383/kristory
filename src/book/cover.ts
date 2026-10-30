@@ -4,7 +4,7 @@ import type { BookPhoto, ItemView } from './model'
 import type { PagePhoto } from './paginate'
 
 function asSlot(photo: BookPhoto | undefined): PagePhoto | undefined {
-  return photo ? { photo, focalX: 0.5, focalY: 0.5 } : undefined
+  return photo ? { photo, focalX: 0.5, focalY: 0.5, zoom: 1 } : undefined
 }
 
 function heroOf(v: ItemView | undefined): BookPhoto | undefined {

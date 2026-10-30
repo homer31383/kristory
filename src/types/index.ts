@@ -329,6 +329,8 @@ export interface BookPhotoSlot {
   photo_id: string
   focal_x?: number
   focal_y?: number
+  /** Fit zoom: 1 fills the slot (default), 0 shows the whole photo on a mat. */
+  zoom?: number
 }
 
 /** A passage hidden in the book, as offsets into a section's plain text. */

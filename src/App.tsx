@@ -35,6 +35,8 @@ const BookBuilder = lazy(() => import('./views/BookBuilder'))
 const BookReview = lazy(() => import('./views/BookReview'))
 const BookPreview = lazy(() => import('./views/BookPreview'))
 const BookPrint = lazy(() => import('./views/BookPrint'))
+const BookEntryEditor = lazy(() => import('./views/BookEntryEditor'))
+const BookCrops = lazy(() => import('./views/BookCrops'))
 
 function Lazy({ children }: { children: ReactNode }) {
   return <Suspense fallback={<p className="text-sm py-8 text-center" style={{ color: 'var(--text-muted)' }}>Loading...</p>}>{children}</Suspense>
@@ -138,9 +140,11 @@ function AppRoutes() {
           </RequireAuth>
         }
       />
-      {/* Book preview and print fill the window, without the app chrome. */}
+      {/* Book preview, print, entry editor and crops fill the window, without the app chrome. */}
       <Route path="/book/:bookId/preview" element={<RequireAuth><Lazy><BookPreview /></Lazy></RequireAuth>} />
       <Route path="/book/:bookId/print" element={<RequireAuth><Lazy><BookPrint /></Lazy></RequireAuth>} />
+      <Route path="/book/:bookId/entry/:itemId" element={<RequireAuth><Lazy><BookEntryEditor /></Lazy></RequireAuth>} />
+      <Route path="/book/:bookId/crops" element={<RequireAuth><Lazy><BookCrops /></Lazy></RequireAuth>} />
       <Route path="/shower" element={<ShowerRoute />} />
       <Route path="/shower/m" element={<RequireAuth title="Shower Manager"><ShowerManage /></RequireAuth>} />
       {/* The registry is retired: static page, no auth or database calls. */}

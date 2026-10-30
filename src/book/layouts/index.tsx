@@ -3,7 +3,8 @@ import type { LayoutId } from '../catalog'
 import type { BookPage } from '../paginate'
 import type { LayoutProps } from './parts'
 import type { CoverData } from './cover'
-import { TextScaleContext } from './measure'
+import { PageContext } from './measure'
+import { matTone } from '../catalog'
 import BandText from './BandText'
 import BackCover from './BackCover'
 import BackScript from './BackScript'
@@ -56,9 +57,9 @@ export function BookPageView({ page, cover }: { page: BookPage; cover: CoverData
   if (page.layout === 'title') return <Title subtitle={cover.subtitle} />
   const Component = PAGE_COMPONENTS[page.layout] ?? Blank
   return (
-    <TextScaleContext.Provider value={page.textScale ?? 1}>
+    <PageContext.Provider value={{ textScale: page.textScale ?? 1, mat: matTone(page.layout) }}>
       <Component page={page} />
-    </TextScaleContext.Provider>
+    </PageContext.Provider>
   )
 }
 
