@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Split photo page</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+body{margin:0;font-family:Lora,Georgia,serif}
+</style>
+</helmet>
+<div style="width: 672px; height: 672px; box-sizing: border-box; position: relative; overflow: hidden; background: radial-gradient(ellipse 85% 75% at 60% 45%, #F1F4FA 0%, #E6EBF5 70%, #DDE4F1 100%); color: #14204A; font-family: Lora, Georgia, serif">
+<svg aria-hidden="true" viewBox="0 0 672 672" width="672" height="672" style="position: absolute; left: 0; top: 0">
+<defs>
+<linearGradient id="gSkyA" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4A68B0"/><stop offset="0.55" stop-color="#E9A58A"/><stop offset="1" stop-color="#F7D9A6"/></linearGradient>
+<linearGradient id="gSeaA" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3E5C9E"/><stop offset="1" stop-color="#1E3263"/></linearGradient>
+<g id="sceneA">
+<rect width="600" height="300" fill="url(#gSkyA)"/>
+<circle cx="400" cy="150" r="46" fill="#FBE3A8"/>
+<path d="M0 168 L90 146 L180 166 L270 140 L360 168 L600 168 V300 H0 Z" fill="#26356B"/>
+<rect y="168" width="600" height="132" fill="url(#gSeaA)"/>
+<path d="M330 178 H470 M350 192 H450 M372 206 H430" stroke="#FBE3A8" stroke-opacity="0.55" stroke-width="3" stroke-linecap="round" fill="none"/>
+</g>
+<linearGradient id="gSkyB" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#AFC8EE"/><stop offset="1" stop-color="#F6EFE0"/></linearGradient>
+<linearGradient id="gSkyC" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9CC7DA"/><stop offset="1" stop-color="#EAF1F2"/></linearGradient>
+<linearGradient id="gSeaC" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3F7F96"/><stop offset="1" stop-color="#2A5A78"/></linearGradient>
+<linearGradient id="gSkyD" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CFE3F3"/><stop offset="1" stop-color="#F4F1E8"/></linearGradient>
+<g id="sceneB">
+<rect width="600" height="300" fill="url(#gSkyB)"/>
+<circle cx="120" cy="76" r="28" fill="#FFF4D6"/>
+<path d="M0 150 Q150 108 300 140 T600 128 V300 H0 Z" fill="#7B8FD0"/>
+<path d="M0 190 Q200 150 600 182 V300 H0 Z" fill="#8A74C2"/>
+<path d="M60 300 L240 176 M160 300 L290 178 M260 300 L340 180 M360 300 L390 182 M460 300 L440 181 M560 300 L500 180" stroke="#C8B8F0" stroke-width="5" stroke-opacity="0.7" fill="none"/>
+</g>
+<g id="sceneC">
+<rect width="600" height="300" fill="url(#gSkyC)"/>
+<rect y="176" width="600" height="124" fill="url(#gSeaC)"/>
+<path d="M170 190 H310 L290 218 H190 Z" fill="#F2E8D5"/>
+<rect x="212" y="166" width="58" height="24" fill="#E0504A"/>
+<rect x="236" y="146" width="8" height="20" fill="#F2E8D5"/>
+<path d="M60 236 H200 M300 250 H460 M420 226 H540" stroke="#EAF1F2" stroke-opacity="0.45" stroke-width="3" stroke-linecap="round" fill="none"/>
+</g>
+<g id="sceneD">
+<rect width="600" height="300" fill="url(#gSkyD)"/>
+<rect y="150" width="600" height="60" fill="#5DA4B8"/>
+<rect y="206" width="600" height="94" fill="#F0DDB8"/>
+<path d="M420 172 Q470 112 520 172 Z" fill="#E0504A"/>
+<path d="M470 120 Q500 128 520 172 L470 172 Z" fill="#F2E8D5"/>
+<path d="M470 120 L470 244" stroke="#6B5A44" stroke-width="4" stroke-linecap="round"/>
+<path d="M120 256 H260" stroke="#E2C998" stroke-width="4" stroke-linecap="round"/>
+</g>
+<filter id="wc" x="-30%" y="-30%" width="160%" height="160%"><feTurbulence type="fractalNoise" baseFrequency="0.11" numOctaves="3" seed="7" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="5" result="d"/><feTurbulence type="fractalNoise" baseFrequency="0.07" numOctaves="2" seed="3" result="m"/><feColorMatrix in="m" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1.6 -0.15" result="ma"/><feComposite in="d" in2="ma" operator="in"/></filter>
+<filter id="ink" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB"><feComponentTransfer><feFuncR type="linear" slope="0.52"/><feFuncG type="linear" slope="0.52"/><feFuncB type="linear" slope="0.52"/></feComponentTransfer></filter>
+<g id="sprig" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<path d="M0 -12 C 9 -15 15 -25 15 -35 C 7 -31 2 -21 0 -12 Z" fill="currentColor" fill-opacity="0.5" stroke="currentColor" stroke-opacity="0.4" stroke-width="2.6" transform="translate(1.4 1.2)" filter="url(#wc)"/>
+<path d="M0 -25 C -9 -28 -15 -38 -15 -48 C -7 -44 -2 -34 0 -25 Z" fill="currentColor" fill-opacity="0.5" stroke="currentColor" stroke-opacity="0.4" stroke-width="2.6" transform="translate(1.4 1.2)" filter="url(#wc)"/>
+<path d="M0 -63 C 7 -53 7 -43 0 -34 C -6 -43 -7 -53 -1 -63 Z" fill="currentColor" fill-opacity="0.5" stroke="currentColor" stroke-opacity="0.4" stroke-width="2.6" transform="translate(1.4 1.2)" filter="url(#wc)"/>
+<g filter="url(#ink)">
+<path d="M-0.5 0 Q2.6 -30 -1 -64 Q4 -30 0.7 0 Z" fill="currentColor" stroke="none"/>
+<path d="M1.2 -1 Q4.5 -30 1 -62" stroke-width="0.35" opacity="0.5"/>
+<path d="M0 -12 C 9 -15 15 -25 15 -35 C 7 -31 2 -21 0 -12 Z M0.8 -11.5 C 9.8 -14.5 15.8 -24.5 15.8 -34.5 C 7.8 -30.5 2.8 -20.5 0.8 -11.5 Z" fill="currentColor" fill-rule="evenodd" stroke="none"/><path d="M0 -12 C 9 -15 15 -25 15 -35 C 7 -31 2 -21 0 -12 Z" stroke-width="0.45"/>
+<path d="M0 -25 C -9 -28 -15 -38 -15 -48 C -7 -44 -2 -34 0 -25 Z M0.8 -24.5 C -8.2 -27.5 -14.2 -37.5 -14.2 -47.5 C -6.2 -43.5 -1.2 -33.5 0.8 -24.5 Z" fill="currentColor" fill-rule="evenodd" stroke="none"/><path d="M0 -25 C -9 -28 -15 -38 -15 -48 C -7 -44 -2 -34 0 -25 Z" stroke-width="0.45"/>
+<path d="M0 -63 C 7 -53 7 -43 0 -34 C -6 -43 -7 -53 -1 -63 Z M0.8 -62.5 C 7.8 -52.5 7.8 -42.5 0.8 -33.5 C -5.2 -42.5 -6.2 -52.5 -0.2 -62.5 Z" fill="currentColor" fill-rule="evenodd" stroke="none"/><path d="M0 -63 C 7 -53 7 -43 0 -34 C -6 -43 -7 -53 -1 -63 Z" stroke-width="0.45"/>
+<path d="M1 -13 Q9 -23 14 -34 M-1 -26 Q-9 -37 -14 -47 M0 -59 L0 -38" stroke-width="0.4"/>
+</g>
+</g>
+<g id="leaf" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<path d="M0 0 C 10 -12 10 -31 1 -47 C -9 -31 -10 -12 0 0 Z" fill="currentColor" fill-opacity="0.5" stroke="currentColor" stroke-opacity="0.4" stroke-width="2.6" transform="translate(1.4 1.2)" filter="url(#wc)"/>
+<g filter="url(#ink)">
+<path d="M0 0 C 10 -12 10 -31 1 -47 C -9 -31 -10 -12 0 0 Z M0.8 0.5 C 10.8 -11.5 10.8 -30.5 1.8 -46.5 C -8.2 -30.5 -9.2 -11.5 0.8 0.5 Z" fill="currentColor" fill-rule="evenodd" stroke="none"/><path d="M0 0 C 10 -12 10 -31 1 -47 C -9 -31 -10 -12 0 0 Z" stroke-width="0.45"/>
+<path d="M-0.3 -1 Q2.2 -24 1 -46 Q3.4 -24 0.6 -1 Z" fill="currentColor" stroke="none"/>
+<path d="M1 -14 L7 -20 M1 -25 L8 -31 M1 -17 L-6 -24 M1 -29 L-6 -36" stroke-width="0.4"/>
+</g>
+</g>
+</defs>
+<use href="#sprig" transform="translate(640 560) rotate(14) scale(0.85)" style="color: #4FA3A5; fill: #4FA3A5"/>
+</svg>
+<div style="position: absolute; left: 0; top: 0"><img src="./photos/ph7.jpg" alt="Black and white portrait of both parents holding the baby" width="300" height="672" style="display: block; width: 300px; height: 672px; object-fit: cover; object-position: 40% 50%; "></div>
+<div style="position: absolute; left: 300px; top: 0; width: 20px; height: 672px; background: #CBD5E8"></div>
+<div style="position: relative; height: 100%; box-sizing: border-box; padding: 40px 48px 40px 352px; display: flex; flex-direction: column">
+<div style="display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px">
+<h1 style="margin: 0; font-family: 'Great Vibes', cursive; font-weight: 400; font-size: 58px; line-height: 1.1; color: #284382">[Date]</h1>
+<span style="font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase; color: #4A5578">[Day]</span>
+<span style="margin-left: auto; width: 22px; height: 22px; box-sizing: border-box; border: 1.5px solid #6B5CA5; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #6B5CA5; align-self: center">C</span>
+</div>
+<p style="margin: 0; padding-left: 14px; border-left: 3px solid #6B5CA5; font-size: 15px; line-height: 1.6; text-wrap: pretty">[Chris's entry for this day goes here, just as he wrote it in the app. It sits beside the photos on the page.]</p>
+<p style="margin: 16px 0 0 0; padding-left: 14px; border-left: 3px solid #D4708F; font-size: 15px; line-height: 1.6; font-style: italic; color: #4A5578; text-wrap: pretty">[Krista's entry for this day goes here, just as she wrote it in the app.]</p>
+<p style="margin: auto 0 0 0; text-align: right; font-size: 12px; letter-spacing: 0.12em; color: #4A5578">[Chapter] &nbsp;&middot;&nbsp; [Page]</p>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":672,"height":672}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
