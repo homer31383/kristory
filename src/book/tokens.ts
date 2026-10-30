@@ -100,4 +100,10 @@ export const TYPE = {
   bodyLine: 1.6,
   /** Smallest body size a page may shrink to so a short overflow fits. */
   bodyMinSize: 13.5,
+  /**
+   * Least space between the folio (page number) and the content above it.
+   * The folio is inside each layout's [data-fit-box], so the text fitter
+   * counts this gap: text steps down a size or continues instead of using it.
+   */
+  folioGap: 16,
 } as const

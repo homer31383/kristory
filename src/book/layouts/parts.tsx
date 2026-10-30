@@ -258,7 +258,7 @@ export function Folio({ page, color, align }: { page: BookPage; color: string; a
         ? `${page.number}${sep}${page.chapter}`
         : `${page.chapter}${sep}${page.number}`
   return (
-    <p style={{ margin: 'auto 0 0 0', textAlign: side, fontSize: 12, letterSpacing: '0.12em', color }}>{text}</p>
+    <p data-folio="" style={{ margin: 'auto 0 0 0', paddingTop: TYPE.folioGap, textAlign: side, fontSize: 12, letterSpacing: '0.12em', color }}>{text}</p>
   )
 }
 
