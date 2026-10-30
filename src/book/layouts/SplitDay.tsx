@@ -7,7 +7,7 @@ export default function SplitDay({ page }: LayoutProps) {
   return (
     <PageFrame background={BG.pale('60% 45%')} color={COLOR.ink}>
       <Decor>
-        <Sprig x={640} y={560} r={14} s={0.85} color={COLOR.gold} />
+        <Sprig x={640} y={560} r={14} s={0.85} color={COLOR.teal} />
       </Decor>
       <div style={{ position: 'absolute', left: 0, top: 0 }}>
         <Photo photo={page.photos[0]} width={300} height={672} />

@@ -110,7 +110,7 @@ export function EntryHeader({
   // the date never breaks, and the weekday wraps below it when there is no room.
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', columnGap: 14, marginBottom }}>
-      <h1 style={{ margin: 0, whiteSpace: 'nowrap', fontFamily: FONT.script, fontWeight: 400, fontSize: 58, lineHeight: 1.1, color: light ? COLOR.goldDeep : COLOR.gold }}>
+      <h1 style={{ margin: 0, whiteSpace: 'nowrap', fontFamily: FONT.script, fontWeight: 400, fontSize: 58, lineHeight: 1.1, color: light ? COLOR.dateOnLight : COLOR.gold }}>
         {scriptDate(entryDate)}
       </h1>
       <span style={{ fontSize: 12, letterSpacing: '0.22em', textTransform: 'uppercase', color: light ? COLOR.slate : COLOR.creamSoft }}>
@@ -233,7 +233,7 @@ export function Facts({
   border: string
 }) {
   if (facts.length === 0) return null
-  const labelColor = tone === 'light' ? COLOR.goldLabel : COLOR.gold
+  const labelColor = tone === 'light' ? COLOR.labelOnLight : COLOR.gold
   return (
     <div style={{ marginTop, paddingTop: 10, borderTop: `1px solid ${border}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
       {facts.map((f) => (

@@ -99,7 +99,7 @@ export function PageThumb({
       {page.entryDate && page.layout !== 'two-quiet' && (
         <div
           className="absolute left-0 right-0 text-center truncate px-1"
-          style={{ top: '3%', fontSize: Math.max(7, size * 0.07), color: dark ? BOOK_GOLD_DARK : COLOR.goldDeep }}
+          style={{ top: '3%', fontSize: Math.max(7, size * 0.07), color: dark ? BOOK_GOLD_DARK : COLOR.dateOnLight }}
         >
           {format(parse(page.entryDate, 'yyyy-MM-dd', new Date()), 'MMM d')}
         </div>

@@ -6,7 +6,7 @@ export default function BandText({ page }: LayoutProps) {
   return (
     <PageFrame background={COLOR.white} color={COLOR.ink}>
       <Decor>
-        <Sprig x={412} y={640} r={-8} s={0.8} color={COLOR.coral} />
+        <Sprig x={412} y={640} r={-8} s={0.8} color={COLOR.sprigBlue} />
       </Decor>
       <div style={{ position: 'absolute', left: 0, top: 0, width: 48, height: 672, background: COLOR.pale1 }} />
       <div style={{ position: 'absolute', left: 48, top: 0, width: 24, height: 250, background: COLOR.band }} />

@@ -37,13 +37,15 @@ export const COLOR = {
 
   // Accents.
   gold: '#D4A24C', // dark pages
-  goldDeep: '#9A6F1E', // light pages
-  goldLabel: '#8A6420', // fact labels on light pages
+  goldDeep: '#9A6F1E', // the Title page
+  dateOnLight: '#284382', // entry date headings on light pages
+  labelOnLight: '#3A5799', // small labels (Ate, Drank) on light pages
   goldPale: '#F0CF8E', // small caps on mid blue pages
   goldLeaf: '#E8C27A',
   coral: '#E0504A',
   coralPale: '#F0A89E',
   teal: '#4FA3A5',
+  sprigBlue: '#4A7FB5', // BandText corner sprig
 
   // Authors: rules and badges.
   chris: '#6B5CA5',
