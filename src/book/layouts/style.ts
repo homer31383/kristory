@@ -3,6 +3,7 @@ import { format, parse } from 'date-fns'
 import { getStorageUrl } from '../../lib/helpers'
 import type { AuthorKey } from '../model'
 import type { PagePhoto } from '../paginate'
+import { COLOR } from '../tokens'
 
 /** Style values and helpers shared by the page layouts (see parts.tsx). */
 
@@ -14,9 +15,9 @@ export const balance = { textWrap: 'balance' } as CSSProperties
 
 export const BG = {
   navy: (at = '50% 45%', size = '80% 70%') =>
-    `radial-gradient(ellipse ${size} at ${at}, #22376E 0%, #172751 36%, #0E173B 68%, #070C26 100%)`,
-  mid: 'radial-gradient(ellipse 80% 70% at 50% 42%, #3A5799 0%, #284382 34%, #1C3166 66%, #121F4C 100%)',
-  pale: (at = '50% 45%') => `radial-gradient(ellipse 85% 75% at ${at}, #F1F4FA 0%, #E6EBF5 70%, #DDE4F1 100%)`,
+    `radial-gradient(ellipse ${size} at ${at}, ${COLOR.navy1} 0%, ${COLOR.navy2} 36%, ${COLOR.navy3} 68%, ${COLOR.navy4} 100%)`,
+  mid: `radial-gradient(ellipse 80% 70% at 50% 42%, ${COLOR.mid1} 0%, ${COLOR.mid2} 34%, ${COLOR.mid3} 66%, ${COLOR.mid4} 100%)`,
+  pale: (at = '50% 45%') => `radial-gradient(ellipse 85% 75% at ${at}, ${COLOR.pale0} 0%, ${COLOR.pale1} 70%, ${COLOR.pale2} 100%)`,
 }
 
 /** The gutter gets 60 px and the outer edge 48 px, mirrored by page side. */
@@ -26,9 +27,9 @@ export function pad(side: 'left' | 'right', top: number, bottom: number) {
 
 /** The colored rule beside each author's text. */
 export function ruleColor(author: AuthorKey | null, tone: Tone): string {
-  if (tone === 'light') return author === 'krista' ? '#D4708F' : '#6B5CA5'
-  if (tone === 'mid') return author === 'krista' ? '#E88BA8' : '#8B7EC8'
-  return author === 'krista' ? '#D4708F' : '#8B7EC8'
+  if (tone === 'light') return author === 'krista' ? COLOR.krista : COLOR.chris
+  if (tone === 'mid') return author === 'krista' ? COLOR.kristaLight : COLOR.chrisMid
+  return author === 'krista' ? COLOR.krista : COLOR.chrisMid
 }
 
 export function scriptDate(entryDate: string | undefined, pattern = 'MMMM d') {

@@ -12,6 +12,7 @@ import {
   type LayoutId,
 } from './catalog'
 import { tokensText, type Token } from './text'
+import { TYPE } from './tokens'
 import {
   isPortrait,
   photoPixels,
@@ -71,6 +72,11 @@ export interface BookPage {
   milestone?: { title: string } | null
   trip?: BookTrip
   quiet?: QuietHalf[]
+  /**
+   * Body type scale under 1 when the page was set slightly smaller so a
+   * short overflow fits (never under TYPE.bodyMinSize).
+   */
+  textScale?: number
   /** True for blanks the paginator added for side rules or an even count. */
   auto?: boolean
 }
@@ -102,6 +108,10 @@ const LONG_TEXT_WORDS = 180
 /** Room the second author's rule and spacing take, for estimates. */
 const SECOND_AUTHOR_WORDS = 15
 const QUIET_MAX_WORDS = LAYOUTS['two-quiet'].textWords
+/** An overflow this short is pulled back onto its page with smaller type. */
+const SHRINK_MAX_WORDS = 40
+/** Body sizes to try, largest first, down to the floor. */
+const SHRINK_SCALES = [14.5, 14, TYPE.bodyMinSize].map((size) => size / TYPE.bodySize)
 
 function blockWords(blocks: PageBlock[]) {
   return blocks.reduce((n, b) => n + b.tokens.length, 0)
@@ -114,7 +124,8 @@ export function pageFitBlocks(page: BookPage): PageBlock[] {
 function estimateFit(page: BookPage): number {
   const total = blockWords(pageFitBlocks(page))
   if (page.quiet) return page.quiet.every((q) => blockWords(q.blocks) <= QUIET_MAX_WORDS) ? total : 0
-  const cap = LAYOUTS[page.layout].textWords - (page.blocks.length > 1 ? SECOND_AUTHOR_WORDS : 0)
+  const scale = page.textScale ?? 1
+  const cap = Math.floor(LAYOUTS[page.layout].textWords / (scale * scale)) - (page.blocks.length > 1 ? SECOND_AUTHOR_WORDS : 0)
   return Math.max(0, Math.min(total, cap))
 }
 
@@ -204,6 +215,26 @@ export function paginate(book: Book, views: ItemView[], bookTrip?: BookTrip | nu
     side: nextSide(),
   })
 
+  const lastLayout = () => pages[pages.length - 1]?.layout ?? null
+
+  // Fills a body page from the cursor (its blocks already hold the rest of
+  // the text). A short leftover is pulled onto the page at a slightly
+  // smaller size; a longer one continues on the next page.
+  const fillBody = (page: BookPage, cursor: Cursor, atLeastOne: boolean) => {
+    const total = remainingCount(cursor)
+    const n = Math.min(fitWords(page), total)
+    if (n < total && total - n <= SHRINK_MAX_WORDS) {
+      for (const scale of SHRINK_SCALES) {
+        if (fitWords({ ...page, textScale: scale }) >= total) {
+          page.textScale = scale
+          page.blocks = take(cursor, total)
+          return
+        }
+      }
+    }
+    page.blocks = take(cursor, atLeastOne ? Math.max(1, n) : n)
+  }
+
   const placeEntry = (v: ItemView) => {
     const withText = v.sections.filter((s) => s.words > 0)
     const allPhotos = v.photos.map((p) => p.photo)
@@ -224,12 +255,15 @@ export function paginate(book: Book, views: ItemView[], bookTrip?: BookTrip | nu
       const override = k === 0 && isEntryLayout(v.item.layout_override) ? v.item.layout_override : null
       const layout =
         override ??
-        chooseLayout({
-          photoCount: part.photos.length,
-          portraitCount: part.photos.filter(isPortrait).length,
-          words,
-          milestone: k === 0 && !!v.milestone,
-        })
+        chooseLayout(
+          {
+            photoCount: part.photos.length,
+            portraitCount: part.photos.filter(isPortrait).length,
+            words,
+            milestone: k === 0 && !!v.milestone,
+          },
+          lastLayout(),
+        )
       const def = LAYOUTS[layout]
       const placed = part.photos.slice(0, def.slots.length)
       let rest = part.photos.slice(def.slots.length)
@@ -256,10 +290,7 @@ export function paginate(book: Book, views: ItemView[], bookTrip?: BookTrip | nu
         dropCap: layout === 'text-day' && k === 0,
         milestone: k === 0 && v.milestone ? { title: v.milestone.title } : null,
       })
-      if (def.text === 'body' && first.blocks.length) {
-        const n = Math.min(fitWords(first), remainingCount(cursor))
-        first.blocks = take(cursor, n)
-      }
+      if (def.text === 'body' && first.blocks.length) fillBody(first, cursor, false)
       push(first)
 
       // Text that does not fit continues on text pages.
@@ -276,20 +307,17 @@ export function paginate(book: Book, views: ItemView[], bookTrip?: BookTrip | nu
           facts: [],
           dropCap: false,
         })
-        const n = Math.max(1, Math.min(fitWords(page), remainingCount(cursor)))
-        page.blocks = take(cursor, n)
+        fillBody(page, cursor, true)
         push(page)
       }
 
       // Photos that do not fit continue on photo pages.
       while (rest.length > 0) {
         const chunk = rest.slice(0, 4)
-        const next = chooseLayout({
-          photoCount: chunk.length,
-          portraitCount: chunk.filter(isPortrait).length,
-          words: 0,
-          milestone: false,
-        })
+        const next = chooseLayout(
+          { photoCount: chunk.length, portraitCount: chunk.filter(isPortrait).length, words: 0, milestone: false },
+          lastLayout(),
+        )
         const n = LAYOUTS[next].slots.length
         const more = rest.slice(0, n)
         push({
@@ -357,7 +385,11 @@ export function paginate(book: Book, views: ItemView[], bookTrip?: BookTrip | nu
     if (v.item.pin_side) ensureSide(v.item.pin_side)
 
     const next = included[i + 1]
-    if (quietCandidate(v) && next && quietCandidate(next) && (book.trip_id || (next.trip?.id ?? null) === tripId)) {
+    // Never two quiet pages in a row: the day after one goes on its own page.
+    if (
+      quietCandidate(v) && next && quietCandidate(next) && lastLayout() !== 'two-quiet' &&
+      (book.trip_id || (next.trip?.id ?? null) === tripId)
+    ) {
       const half = (x: ItemView): QuietHalf => {
         const blocks = x.sections
           .filter((s) => s.words > 0)

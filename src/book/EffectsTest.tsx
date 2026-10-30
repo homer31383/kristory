@@ -1,5 +1,6 @@
 import { useMemo, type CSSProperties, type ReactNode } from 'react'
 import { PageFrame } from './layouts/parts'
+import { COLOR, FONT, alpha } from './tokens'
 
 /**
  * A test sheet for the print route (?test=effects). Each cell isolates one
@@ -16,12 +17,12 @@ function useTestImage(): string {
     const g = c.getContext('2d')
     if (!g) return ''
     const grad = g.createLinearGradient(0, 0, 1200, 800)
-    grad.addColorStop(0, '#E0504A')
-    grad.addColorStop(0.5, '#D4A24C')
-    grad.addColorStop(1, '#4FA3A5')
+    grad.addColorStop(0, COLOR.coral)
+    grad.addColorStop(0.5, COLOR.gold)
+    grad.addColorStop(1, COLOR.teal)
     g.fillStyle = grad
     g.fillRect(0, 0, 1200, 800)
-    g.strokeStyle = 'rgba(255,255,255,0.55)'
+    g.strokeStyle = alpha(COLOR.white, 0.55)
     g.lineWidth = 4
     for (let x = 0; x <= 1200; x += 100) {
       g.beginPath()
@@ -35,11 +36,11 @@ function useTestImage(): string {
       g.lineTo(1200, y)
       g.stroke()
     }
-    g.fillStyle = '#14204A'
+    g.fillStyle = COLOR.ink
     g.beginPath()
     g.arc(900, 400, 160, 0, Math.PI * 2)
     g.fill()
-    g.fillStyle = '#FFFFFF'
+    g.fillStyle = COLOR.white
     g.font = 'bold 120px sans-serif'
     g.fillText('R', 860, 445)
     return c.toDataURL('image/jpeg', 0.9)
@@ -48,20 +49,20 @@ function useTestImage(): string {
 
 function Cell({ label, children, dark = false }: { label: string; children: ReactNode; dark?: boolean }) {
   return (
-    <div style={{ position: 'relative', border: '1px solid #DDE4F1', background: dark ? '#14204A' : '#FFFFFF', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', border: `1px solid ${COLOR.pale2}`, background: dark ? COLOR.ink : COLOR.white, overflow: 'hidden' }}>
       <svg viewBox="0 0 200 150" width="100%" height="138" style={{ display: 'block' }} aria-hidden="true">
         {children}
       </svg>
-      <p style={{ position: 'absolute', left: 6, bottom: 4, margin: 0, fontSize: 10, color: dark ? '#F2E8D5' : '#14204A', fontFamily: 'Inter, sans-serif' }}>{label}</p>
+      <p style={{ position: 'absolute', left: 6, bottom: 4, margin: 0, fontSize: 10, color: dark ? COLOR.cream : COLOR.ink, fontFamily: 'Inter, sans-serif' }}>{label}</p>
     </div>
   )
 }
 
 function HtmlCell({ label, children, dark = false, style }: { label: string; children: ReactNode; dark?: boolean; style?: CSSProperties }) {
   return (
-    <div style={{ position: 'relative', height: 140, border: '1px solid #DDE4F1', background: dark ? '#14204A' : '#FFFFFF', overflow: 'hidden', ...style }}>
+    <div style={{ position: 'relative', height: 140, border: `1px solid ${COLOR.pale2}`, background: dark ? COLOR.ink : COLOR.white, overflow: 'hidden', ...style }}>
       {children}
-      <p style={{ position: 'absolute', left: 6, bottom: 4, margin: 0, fontSize: 10, color: dark ? '#F2E8D5' : '#14204A', fontFamily: 'Inter, sans-serif' }}>{label}</p>
+      <p style={{ position: 'absolute', left: 6, bottom: 4, margin: 0, fontSize: 10, color: dark ? COLOR.cream : COLOR.ink, fontFamily: 'Inter, sans-serif' }}>{label}</p>
     </div>
   )
 }
@@ -69,27 +70,27 @@ function HtmlCell({ label, children, dark = false, style }: { label: string; chi
 export function EffectsTest() {
   const img = useTestImage()
   return (
-    <PageFrame background="#FFFFFF" color="#14204A">
+    <PageFrame background={COLOR.white} color={COLOR.ink}>
       <div style={{ padding: 20, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
         <Cell label="1 wc: feTurbulence + feDisplacementMap">
-          <rect x="40" y="25" width="120" height="90" fill="#E0504A" filter="url(#bk-wc)" />
+          <rect x="40" y="25" width="120" height="90" fill={COLOR.coral} filter="url(#bk-wc)" />
         </Cell>
         <Cell label="2 ink: feComponentTransfer">
-          <rect x="40" y="25" width="120" height="90" fill="#4FA3A5" filter="url(#bk-ink)" />
+          <rect x="40" y="25" width="120" height="90" fill={COLOR.teal} filter="url(#bk-ink)" />
         </Cell>
         <Cell label="3 full sprig (wc + ink)">
-          <use href="#bk-sprig" transform="translate(100 95) scale(2.2)" style={{ color: '#E0504A', fill: '#E0504A' }} />
+          <use href="#bk-sprig" transform="translate(100 95) scale(2.2)" style={{ color: COLOR.coral, fill: COLOR.coral }} />
         </Cell>
         <Cell label="4 sk1 on an svg path">
-          <circle cx="100" cy="70" r="45" fill="none" stroke="#14204A" strokeWidth="2" filter="url(#bk-sk1)" />
+          <circle cx="100" cy="70" r="45" fill="none" stroke={COLOR.ink} strokeWidth="2" filter="url(#bk-sk1)" />
         </Cell>
         <HtmlCell label="5 text stroke alone" dark>
-          <span style={{ position: 'absolute', left: 60, top: -10, fontFamily: "'Great Vibes', cursive", fontSize: 130, color: 'transparent', WebkitTextStroke: '1.5px #FFFFFF' }}>K</span>
+          <span style={{ position: 'absolute', left: 60, top: -10, fontFamily: FONT.script, fontSize: 130, color: 'transparent', WebkitTextStroke: `1.5px ${COLOR.white}` }}>K</span>
         </HtmlCell>
         <HtmlCell label="6 text stroke + sk1 (cover K)" dark>
-          <span style={{ position: 'absolute', left: 60, top: -10, fontFamily: "'Great Vibes', cursive", fontSize: 130, color: '#D4A24C' }}>
+          <span style={{ position: 'absolute', left: 60, top: -10, fontFamily: FONT.script, fontSize: 130, color: COLOR.gold }}>
             K
-            <span style={{ position: 'absolute', left: 0, top: 0, color: 'transparent', WebkitTextStroke: '1.5px #FFFFFF', filter: 'url(#bk-sk1)' }}>K</span>
+            <span style={{ position: 'absolute', left: 0, top: 0, color: 'transparent', WebkitTextStroke: `1.5px ${COLOR.white}`, filter: 'url(#bk-sk1)' }}>K</span>
           </span>
         </HtmlCell>
         <HtmlCell label="7 object-fit cover, position 80% 50%">
@@ -105,21 +106,21 @@ export function EffectsTest() {
           )}
         </HtmlCell>
         <HtmlCell label="9 mix-blend multiply, no filter">
-          <div style={{ position: 'absolute', inset: 20, background: '#4FA3A5' }} />
-          <div style={{ position: 'absolute', left: 60, top: 40, width: 100, height: 80, background: '#E0504A', mixBlendMode: 'multiply' }} />
+          <div style={{ position: 'absolute', inset: 20, background: COLOR.teal }} />
+          <div style={{ position: 'absolute', left: 60, top: 40, width: 100, height: 80, background: COLOR.coral, mixBlendMode: 'multiply' }} />
         </HtmlCell>
-        <HtmlCell label="10 radial gradient (navy page)" style={{ background: 'radial-gradient(ellipse 80% 70% at 50% 45%, #22376E 0%, #172751 36%, #0E173B 68%, #070C26 100%)' }} dark>
+        <HtmlCell label="10 radial gradient (navy page)" style={{ background: `radial-gradient(ellipse 80% 70% at 50% 45%, ${COLOR.navy1} 0%, ${COLOR.navy2} 36%, ${COLOR.navy3} 68%, ${COLOR.navy4} 100%)` }} dark>
           <span />
         </HtmlCell>
         <HtmlCell label="11 Lora italic + Great Vibes">
           <p style={{ margin: '14px 10px', fontFamily: 'Lora, serif', fontStyle: 'italic', fontSize: 15 }}>The ferry left at noon.</p>
-          <p style={{ margin: '0 10px', fontFamily: "'Great Vibes', cursive", fontSize: 40, color: '#9A6F1E' }}>July 16</p>
+          <p style={{ margin: '0 10px', fontFamily: FONT.script, fontSize: 40, color: COLOR.goldDeep }}>July 16</p>
         </HtmlCell>
         <HtmlCell label="12 css filter only (grayscale)">
           {img && <img src={img} alt="" style={{ display: 'block', width: '100%', height: 140, objectFit: 'cover', filter: 'grayscale(1)' }} />}
         </HtmlCell>
       </div>
-      <p style={{ position: 'absolute', left: 20, bottom: 14, margin: 0, fontSize: 11, color: '#4A5578', fontFamily: 'Inter, sans-serif' }}>
+      <p style={{ position: 'absolute', left: 20, bottom: 14, margin: 0, fontSize: 11, color: COLOR.slate, fontFamily: 'Inter, sans-serif' }}>
         Effects test. Compare each cell with the same cell on screen.
       </p>
     </PageFrame>

@@ -1,11 +1,12 @@
 import { Decor, EntryHeader, Folio, Leaf, PageFrame, Photo, TextBlocks, type LayoutProps } from './parts'
+import { COLOR } from '../tokens'
 
 /** GridDay.dc.html: white, one large photo and two small. */
 export default function GridDay({ page }: LayoutProps) {
   return (
-    <PageFrame background="#FFFFFF" color="#14204A">
+    <PageFrame background={COLOR.white} color={COLOR.ink}>
       <Decor>
-        <Leaf x={630} y={636} r={30} s={0.8} color="#4FA3A5" />
+        <Leaf x={630} y={636} r={30} s={0.8} color={COLOR.teal} />
       </Decor>
       <div data-fit-box="" style={{ position: 'relative', height: '100%', boxSizing: 'border-box', padding: '40px 48px 40px 48px', display: 'flex', flexDirection: 'column' }}>
         <EntryHeader entryDate={page.entryDate} badges={page.badges} tone="light" />
@@ -17,7 +18,7 @@ export default function GridDay({ page }: LayoutProps) {
           </div>
         </div>
         <TextBlocks blocks={page.blocks} tone="light" firstMargin={20} />
-        <Folio page={page} color="#4A5578" />
+        <Folio page={page} color={COLOR.slate} />
       </div>
     </PageFrame>
   )

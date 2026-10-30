@@ -254,6 +254,7 @@ All app tables run with **RLS disabled** (no Supabase Auth; the client is truste
   - `UNIQUE(book_id, entry_id)`; indexes `book_items_book_id_idx (book_id, sort_key)`, `book_items_entry_id_idx`.
   - REPLICA IDENTITY FULL; added to `supabase_realtime`.
 - Both tables: RLS on, `household_only` policy, anon revoked, `select, insert, update, delete` to `authenticated, service_role`.
+- **`035_book_revoke_extra.sql`** (2026-10-30): revokes truncate, references, trigger on both tables from authenticated, anon, public. Applied by hand on the live database first; idempotent.
 - Pages are not stored; `src/book/paginate.ts` computes them. Layout components: `src/book/layouts/` (from `docs/book-layouts/*.dc.html`); catalog and `chooseLayout()`: `src/book/catalog.ts`.
 
 ---

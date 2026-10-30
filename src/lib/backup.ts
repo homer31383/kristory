@@ -1057,6 +1057,8 @@ CREATE POLICY household_only ON book_items FOR ALL TO authenticated
   USING (public.is_household()) WITH CHECK (public.is_household());
 grant select, insert, update, delete on public.book_books to authenticated, service_role;
 grant select, insert, update, delete on public.book_items to authenticated, service_role;
+revoke truncate, references, trigger on public.book_books from authenticated, anon, public;
+revoke truncate, references, trigger on public.book_items from authenticated, anon, public;
 ALTER TABLE book_items REPLICA IDENTITY FULL;
 ALTER PUBLICATION supabase_realtime ADD TABLE book_items;
 

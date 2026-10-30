@@ -1,5 +1,6 @@
 import type { Book, BookAuthors, BookItem, BookPhotoSlot, EntryPhoto } from '../types'
 import { hiddenTextChanged, sectionRich, tokensText, visibleTokens, wordCount, type RichText, type Token } from './text'
+import { COLOR } from './tokens'
 
 // ── What the book reads from the journal ────────────────────────────────────
 
@@ -39,7 +40,7 @@ export interface BookMilestone {
 
 export type AuthorKey = 'chris' | 'krista'
 
-export const AUTHOR_COLORS: Record<AuthorKey, string> = { chris: '#6B5CA5', krista: '#D4708F' }
+export const AUTHOR_COLORS: Record<AuthorKey, string> = { chris: COLOR.chris, krista: COLOR.krista }
 
 export function authorKey(name: string | null | undefined): AuthorKey | null {
   const n = (name ?? '').trim().toLowerCase()

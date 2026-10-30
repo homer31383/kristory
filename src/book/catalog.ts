@@ -159,27 +159,62 @@ export function effectiveDpi(px: { w: number; h: number }, slotIn: { w: number; 
 export const DPI_HARD = 150
 export const DPI_SOFT = 200
 
-/** The draft's pick for an entry page, by photo count and orientation. */
-export function chooseLayout(opts: {
+/**
+ * Layouts only a person picks (the phase 2 layout picker), never the
+ * automatic draft. MidArch shows a quote and no body text, so as an
+ * automatic pick it pushes the whole entry onto a second page.
+ */
+export const MANUAL_ONLY_LAYOUTS: LayoutId[] = ['mid-arch']
+
+/** One-photo layouts, best first, by orientation. */
+const ONE_PORTRAIT: LayoutId[] = ['full-bleed', 'navy-panel', 'navy-frame', 'split-day', 'text-day', 'navy-top']
+const ONE_LANDSCAPE: LayoutId[] = ['full-bleed', 'navy-panel', 'navy-top', 'text-day', 'split-day', 'navy-frame']
+
+/**
+ * Orders layouts by fit for the words: those with room for all of them keep
+ * their order, then the rest by how much room they have (their text
+ * continues on the next page).
+ */
+function byRoom(order: LayoutId[], words: number): LayoutId[] {
+  if (words === 0) return order
+  const room = (l: LayoutId) => LAYOUTS[l].textWords
+  const fit = order.filter((l) => room(l) >= words)
+  const short = order.filter((l) => room(l) < words).sort((a, b) => room(b) - room(a))
+  return [...fit, ...short]
+}
+
+export interface LayoutNeeds {
   photoCount: number
   portraitCount: number
   words: number
   milestone: boolean
-}): LayoutId {
-  const { photoCount: n, portraitCount: p, words, milestone } = opts
-  if (milestone) return 'milestone'
-  if (n === 0) return 'text-day'
+}
+
+/**
+ * Every layout that suits an entry page, best first, by photo count,
+ * orientation (portrait-heavy is more than half portrait) and word count.
+ * Only layouts with no more photo slots than photos are listed, so no slot
+ * is left empty. Never includes MANUAL_ONLY_LAYOUTS.
+ */
+export function rankLayouts({ photoCount: n, portraitCount: p, words, milestone }: LayoutNeeds): LayoutId[] {
+  if (milestone) return ['milestone', ...rankLayouts({ photoCount: n, portraitCount: p, words, milestone: false })]
+  if (n === 0) return ['text-day']
   const portraitHeavy = p * 2 > n
-  if (n === 1) {
-    if (words === 0) return 'full-bleed'
-    if (words <= LAYOUTS['navy-panel'].textWords) return 'navy-panel'
-    if (portraitHeavy) return words <= LAYOUTS['navy-frame'].textWords ? 'navy-frame' : 'split-day'
-    return words <= LAYOUTS['navy-top'].textWords ? 'navy-top' : 'text-day'
-  }
-  if (n === 2) return portraitHeavy ? 'band-text' : 'two-authors'
+  if (n === 1) return byRoom(portraitHeavy ? ONE_PORTRAIT : ONE_LANDSCAPE, words)
+  if (n === 2) return portraitHeavy ? ['band-text', 'two-authors'] : ['two-authors', 'band-text']
   if (n === 3) {
-    if (portraitHeavy) return 'navy-trio'
-    return p === 0 ? 'photo-day' : 'grid-day'
+    if (portraitHeavy) return ['navy-trio', 'grid-day', 'photo-day']
+    return p === 0 ? ['photo-day', 'grid-day', 'navy-trio'] : ['grid-day', 'photo-day', 'navy-trio']
   }
-  return portraitHeavy ? 'navy-trio' : 'white-mosaic'
+  return portraitHeavy ? ['navy-trio', 'white-mosaic', 'grid-day'] : ['white-mosaic', 'photo-day', 'grid-day', 'navy-trio']
+}
+
+/**
+ * The draft's pick for an entry page: the best ranked layout that differs
+ * from the page before (`avoid`). When nothing else suits (a day with no
+ * photos has only text-day), the best one is used anyway.
+ */
+export function chooseLayout(needs: LayoutNeeds, avoid?: LayoutId | null): LayoutId {
+  const ranked = rankLayouts(needs)
+  return ranked.find((l) => l !== avoid) ?? ranked[0]
 }

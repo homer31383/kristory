@@ -1,0 +1,42 @@
+/*
+ * Book fonts, self-hosted as static TrueType files (public/fonts/book/, SIL
+ * Open Font License). Google Fonts serves Lora as a variable font, which
+ * Chrome's PDF output embeds as Type 3 glyphs; static files embed as normal
+ * TrueType fonts. Imported by src/book/fit.tsx, so only the book screens
+ * load these rules.
+ */
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/book/Lora-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url('/fonts/book/Lora-Medium.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 600;
+  font-display: block;
+  src: url('/fonts/book/Lora-SemiBold.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/book/Lora-Italic.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Great Vibes';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/book/GreatVibes-Regular.ttf') format('truetype');
+}

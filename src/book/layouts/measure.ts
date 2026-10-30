@@ -6,3 +6,9 @@ import { createContext } from 'react'
  * downloads an image.
  */
 export const MeasureContext = createContext(false)
+
+/**
+ * The page's body type scale (BookPage.textScale), read by TextBlocks. Set
+ * by BookPageView so every layout gets it without passing it down.
+ */
+export const TextScaleContext = createContext(1)

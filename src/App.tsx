@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './lib/supabase'
@@ -28,10 +28,17 @@ import LibraryRiver from './views/LibraryRiver'
 import ClosedPage from './views/ClosedPage'
 import ShowerManage from './views/ShowerManage'
 import BabyShower from './views/BabyShower'
-import BookBuilder from './views/BookBuilder'
-import BookReview from './views/BookReview'
-import BookPreview from './views/BookPreview'
-import BookPrint from './views/BookPrint'
+
+// The book screens load on demand: they carry the page layouts, the text
+// fitter and react-dom/server, none of which the rest of the app needs.
+const BookBuilder = lazy(() => import('./views/BookBuilder'))
+const BookReview = lazy(() => import('./views/BookReview'))
+const BookPreview = lazy(() => import('./views/BookPreview'))
+const BookPrint = lazy(() => import('./views/BookPrint'))
+
+function Lazy({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<p className="text-sm py-8 text-center" style={{ color: 'var(--text-muted)' }}>Loading...</p>}>{children}</Suspense>
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -132,8 +139,8 @@ function AppRoutes() {
         }
       />
       {/* Book preview and print fill the window, without the app chrome. */}
-      <Route path="/book/:bookId/preview" element={<RequireAuth><BookPreview /></RequireAuth>} />
-      <Route path="/book/:bookId/print" element={<RequireAuth><BookPrint /></RequireAuth>} />
+      <Route path="/book/:bookId/preview" element={<RequireAuth><Lazy><BookPreview /></Lazy></RequireAuth>} />
+      <Route path="/book/:bookId/print" element={<RequireAuth><Lazy><BookPrint /></Lazy></RequireAuth>} />
       <Route path="/shower" element={<ShowerRoute />} />
       <Route path="/shower/m" element={<RequireAuth title="Shower Manager"><ShowerManage /></RequireAuth>} />
       {/* The registry is retired: static page, no auth or database calls. */}
@@ -160,8 +167,8 @@ function AppRoutes() {
         <Route path="/trips/new" element={<CreateTrip />} />
         <Route path="/trips/:tripId" element={<TripDetail />} />
         <Route path="/baby" element={<Baby />} />
-        <Route path="/book" element={<BookBuilder />} />
-        <Route path="/book/:bookId" element={<BookReview />} />
+        <Route path="/book" element={<Lazy><BookBuilder /></Lazy>} />
+        <Route path="/book/:bookId" element={<Lazy><BookReview /></Lazy>} />
         <Route path="/settings" element={<Settings />} />
       </Route>
     </Routes>

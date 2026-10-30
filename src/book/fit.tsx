@@ -4,6 +4,7 @@ import { BookPageView } from './layouts'
 import { MeasureContext } from './layouts/measure'
 import { pageFitBlocks, type BookPage, type FitFn } from './paginate'
 import { hashText, runsToHtml, tokenRuns, tokensText } from './text'
+import './fonts.css'
 
 /**
  * Measures how much text really fits on a page. The page's own layout
@@ -44,6 +45,7 @@ function signature(page: BookPage): string {
       f: page.facts,
       cap: page.caption ?? null,
       d: !!page.dropCap,
+      s: page.textScale ?? 1,
       b: page.badges,
       m: page.milestone?.title ?? null,
       q: page.quiet?.map((h) => [h.entryDate, h.badges]) ?? null,

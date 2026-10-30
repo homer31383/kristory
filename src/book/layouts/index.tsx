@@ -3,6 +3,7 @@ import type { LayoutId } from '../catalog'
 import type { BookPage } from '../paginate'
 import type { LayoutProps } from './parts'
 import type { CoverData } from './cover'
+import { TextScaleContext } from './measure'
 import BandText from './BandText'
 import BackCover from './BackCover'
 import BackScript from './BackScript'
@@ -54,7 +55,11 @@ const PAGE_COMPONENTS: Partial<Record<LayoutId, ComponentType<LayoutProps>>> = {
 export function BookPageView({ page, cover }: { page: BookPage; cover: CoverData }) {
   if (page.layout === 'title') return <Title subtitle={cover.subtitle} />
   const Component = PAGE_COMPONENTS[page.layout] ?? Blank
-  return <Component page={page} />
+  return (
+    <TextScaleContext.Provider value={page.textScale ?? 1}>
+      <Component page={page} />
+    </TextScaleContext.Provider>
+  )
 }
 
 export type CoverStyle = 'a' | 'b'

@@ -2,8 +2,9 @@ import { useContext, type CSSProperties, type ReactNode } from 'react'
 import { MARK_BOLD, MARK_ITALIC, tokenRuns } from '../text'
 import type { AuthorKey } from '../model'
 import type { BookPage, PageBlock, PagePhoto } from '../paginate'
-import { MeasureContext } from './measure'
+import { MeasureContext, TextScaleContext } from './measure'
 import { photoUrl, pretty, ruleColor, scriptDate, type Tone } from './style'
+import { COLOR, FONT, SHADE, TYPE } from '../tokens'
 
 /**
  * Pieces shared by the page layouts. Every value here is copied from the
@@ -32,7 +33,7 @@ export function PageFrame({ background, color, children }: { background: string;
         overflow: 'hidden',
         background,
         color,
-        fontFamily: 'Lora, Georgia, serif',
+        fontFamily: FONT.body,
       }}
     >
       {children}
@@ -70,9 +71,9 @@ export function Dot({ x, y, color }: { x: number; y: number; color: string }) {
 // ── Header ───────────────────────────────────────────────────────────────────
 
 const BADGE: Record<Tone, Record<AuthorKey, string>> = {
-  light: { chris: '#6B5CA5', krista: '#B8456B' },
-  dark: { chris: '#B9AEF0', krista: '#E88BA8' },
-  mid: { chris: '#B9AEF0', krista: '#E88BA8' },
+  light: { chris: COLOR.chris, krista: COLOR.kristaDeep },
+  dark: { chris: COLOR.chrisLight, krista: COLOR.kristaLight },
+  mid: { chris: COLOR.chrisLight, krista: COLOR.kristaLight },
 }
 
 function badgeStyle(color: string): CSSProperties {
@@ -109,10 +110,10 @@ export function EntryHeader({
   // the date never breaks, and the weekday wraps below it when there is no room.
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', columnGap: 14, marginBottom }}>
-      <h1 style={{ margin: 0, whiteSpace: 'nowrap', fontFamily: "'Great Vibes', cursive", fontWeight: 400, fontSize: 58, lineHeight: 1.1, color: light ? '#9A6F1E' : '#D4A24C' }}>
+      <h1 style={{ margin: 0, whiteSpace: 'nowrap', fontFamily: FONT.script, fontWeight: 400, fontSize: 58, lineHeight: 1.1, color: light ? COLOR.goldDeep : COLOR.gold }}>
         {scriptDate(entryDate)}
       </h1>
-      <span style={{ fontSize: 12, letterSpacing: '0.22em', textTransform: 'uppercase', color: light ? '#4A5578' : '#E7DCC6' }}>
+      <span style={{ fontSize: 12, letterSpacing: '0.22em', textTransform: 'uppercase', color: light ? COLOR.slate : COLOR.creamSoft }}>
         {scriptDate(entryDate, 'EEEE')}
       </span>
       {badges.length === 1 ? (
@@ -169,30 +170,33 @@ export function TextBlocks({
   dropCap?: boolean
   startIndex?: number
 }) {
+  const scale = useContext(TextScaleContext)
   return (
     <>
       {blocks.map((b, i) => {
         const cap = dropCap && i === 0 ? firstChar(b) : ''
+        const style: CSSProperties = {
+          margin: `${i === 0 ? firstMargin : gap}px 0 0 0`,
+          paddingLeft: 14,
+          borderLeft: `3px solid ${ruleColor(b.author, tone)}`,
+          fontSize: TYPE.bodySize,
+          lineHeight: TYPE.bodyLine,
+          whiteSpace: 'pre-line',
+          ...pretty,
+          ...baseStyle,
+          ...blockStyle?.(i),
+        }
+        if (scale < 1) style.fontSize = scaledSize(Number(style.fontSize), scale)
         return (
           <p
             key={b.sectionId + i}
             data-fit-para=""
-            style={{
-              margin: `${i === 0 ? firstMargin : gap}px 0 0 0`,
-              paddingLeft: 14,
-              borderLeft: `3px solid ${ruleColor(b.author, tone)}`,
-              fontSize: 15,
-              lineHeight: 1.6,
-              whiteSpace: 'pre-line',
-              ...pretty,
-              ...baseStyle,
-              ...blockStyle?.(i),
-            }}
+            style={style}
           >
             {dropCap && i === 0 && (
               <span
                 data-fit-dropcap=""
-                style={{ float: 'left', fontFamily: 'Lora, Georgia, serif', fontWeight: 600, fontSize: 56, lineHeight: '46px', padding: '4px 8px 0 0', color: '#D4A24C', fontStyle: 'normal' }}
+                style={{ float: 'left', fontFamily: FONT.body, fontWeight: 600, fontSize: 56, lineHeight: '46px', padding: '4px 8px 0 0', color: COLOR.gold, fontStyle: 'normal' }}
               >
                 {cap}
               </span>
@@ -205,6 +209,11 @@ export function TextBlocks({
       })}
     </>
   )
+}
+
+/** A designed size scaled down, never under the floor (or the design, if smaller). */
+function scaledSize(size: number, scale: number): number {
+  return Math.max(size * scale, Math.min(size, TYPE.bodyMinSize))
 }
 
 function firstChar(b: PageBlock): string {
@@ -224,7 +233,7 @@ export function Facts({
   border: string
 }) {
   if (facts.length === 0) return null
-  const labelColor = tone === 'light' ? '#8A6420' : '#D4A24C'
+  const labelColor = tone === 'light' ? COLOR.goldLabel : COLOR.gold
   return (
     <div style={{ marginTop, paddingTop: 10, borderTop: `1px solid ${border}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
       {facts.map((f) => (
@@ -270,7 +279,7 @@ export function Photo({
   if (!photo || measuring) {
     if (photo) return <div style={{ width, height, flexShrink: 0, ...style }} />
     // A slot the entry has no photo for (a layout picked by hand).
-    return <div style={{ width, height, background: 'rgba(127,140,170,0.18)', ...style }} />
+    return <div style={{ width, height, background: SHADE.emptySlot, ...style }} />
   }
   return (
     <img

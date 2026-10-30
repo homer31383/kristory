@@ -3,11 +3,12 @@ import { getStorageUrl } from '../lib/helpers'
 import { LAYOUTS, type PageTone } from './catalog'
 import { AUTHOR_COLORS, type AuthorKey } from './model'
 import type { BookPage, ItemFlag } from './paginate'
+import { COLOR, alpha } from './tokens'
 
 export const BOOK_NAVY =
-  'radial-gradient(ellipse 72% 64% at 50% 47%, #22376E 0%, #172751 36%, #0E173B 68%, #070C26 100%)'
-export const BOOK_CREAM = '#F2E8D5'
-export const BOOK_GOLD_DARK = '#D4A24C'
+  `radial-gradient(ellipse 72% 64% at 50% 47%, ${COLOR.navy1} 0%, ${COLOR.navy2} 36%, ${COLOR.navy3} 68%, ${COLOR.navy4} 100%)`
+export const BOOK_CREAM = COLOR.cream
+export const BOOK_GOLD_DARK = COLOR.gold
 
 export function AuthorBadge({ author, size = 20 }: { author: AuthorKey; size?: number }) {
   return (
@@ -27,7 +28,7 @@ export function FlagChip({ flag }: { flag: ItemFlag }) {
     <span
       className="text-[11px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap"
       style={{
-        backgroundColor: hard ? 'rgba(224, 80, 74, 0.14)' : 'rgba(212, 162, 76, 0.18)',
+        backgroundColor: hard ? alpha(COLOR.coral, 0.14) : alpha(COLOR.gold, 0.18),
         color: hard ? '#B23A35' : '#8A6216',
       }}
     >
@@ -37,12 +38,12 @@ export function FlagChip({ flag }: { flag: ItemFlag }) {
 }
 
 const TONE_BG: Record<PageTone, string> = {
-  white: '#FFFFFF',
-  pale: 'radial-gradient(ellipse 85% 75% at 50% 45%, #F1F4FA 0%, #E6EBF5 70%, #DDE4F1 100%)',
+  white: COLOR.white,
+  pale: `radial-gradient(ellipse 85% 75% at 50% 45%, ${COLOR.pale0} 0%, ${COLOR.pale1} 70%, ${COLOR.pale2} 100%)`,
   navy: BOOK_NAVY,
-  mid: 'radial-gradient(ellipse 80% 70% at 50% 42%, #3A5799 0%, #284382 34%, #1C3166 66%, #121F4C 100%)',
-  photo: '#0B1235',
-  indigo: '#3A3162',
+  mid: `radial-gradient(ellipse 80% 70% at 50% 42%, ${COLOR.mid1} 0%, ${COLOR.mid2} 34%, ${COLOR.mid3} 66%, ${COLOR.mid4} 100%)`,
+  photo: COLOR.navyDeep,
+  indigo: COLOR.plum,
 }
 
 /**
@@ -98,7 +99,7 @@ export function PageThumb({
       {page.entryDate && page.layout !== 'two-quiet' && (
         <div
           className="absolute left-0 right-0 text-center truncate px-1"
-          style={{ top: '3%', fontSize: Math.max(7, size * 0.07), color: dark ? BOOK_GOLD_DARK : '#9A6F1E' }}
+          style={{ top: '3%', fontSize: Math.max(7, size * 0.07), color: dark ? BOOK_GOLD_DARK : COLOR.goldDeep }}
         >
           {format(parse(page.entryDate, 'yyyy-MM-dd', new Date()), 'MMM d')}
         </div>
@@ -114,7 +115,7 @@ export function PageThumb({
               top: pct(box.y + k * Math.min(0.06, box.h / lineCount)),
               width: pct(box.w * (k === lineCount - 1 ? 0.6 : 1)),
               height: Math.max(1, size * 0.012),
-              backgroundColor: dark ? 'rgba(242,232,213,0.35)' : 'rgba(44,37,34,0.18)',
+              backgroundColor: dark ? alpha(COLOR.cream, 0.35) : 'rgba(44,37,34,0.18)',
             }}
           />
         ))}
@@ -122,7 +123,7 @@ export function PageThumb({
       {(page.kind === 'title' || page.kind === 'chapter') && (
         <div
           className="absolute inset-x-0 text-center px-1 truncate"
-          style={{ top: page.kind === 'title' ? '40%' : '12%', fontSize: Math.max(8, size * 0.09), color: dark ? BOOK_CREAM : '#14204A', fontStyle: 'italic' }}
+          style={{ top: page.kind === 'title' ? '40%' : '12%', fontSize: Math.max(8, size * 0.09), color: dark ? BOOK_CREAM : COLOR.ink, fontStyle: 'italic' }}
         >
           {page.kind === 'title' ? 'The Kristory' : page.trip?.title}
         </div>
