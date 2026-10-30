@@ -30,6 +30,8 @@ import ShowerManage from './views/ShowerManage'
 import BabyShower from './views/BabyShower'
 import BookBuilder from './views/BookBuilder'
 import BookReview from './views/BookReview'
+import BookPreview from './views/BookPreview'
+import BookPrint from './views/BookPrint'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -129,6 +131,9 @@ function AppRoutes() {
           </RequireAuth>
         }
       />
+      {/* Book preview and print fill the window, without the app chrome. */}
+      <Route path="/book/:bookId/preview" element={<RequireAuth><BookPreview /></RequireAuth>} />
+      <Route path="/book/:bookId/print" element={<RequireAuth><BookPrint /></RequireAuth>} />
       <Route path="/shower" element={<ShowerRoute />} />
       <Route path="/shower/m" element={<RequireAuth title="Shower Manager"><ShowerManage /></RequireAuth>} />
       {/* The registry is retired: static page, no auth or database calls. */}

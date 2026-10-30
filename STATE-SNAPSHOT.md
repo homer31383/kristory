@@ -62,6 +62,8 @@ Every other hostname gets the full route table below. `vercel.json` has no domai
 | `/settings` | `Settings` | ✅ | ✅ |
 | `/book` | `BookBuilder` (books list, new-book setup) | ✅ | ✅ |
 | `/book/:bookId` | `BookReview` (contact sheet) | ✅ | ✅ |
+| `/book/:bookId/preview` | `BookPreview` (spread viewer, no Layout) | ✅ | ✅ |
+| `/book/:bookId/print` | `BookPrint` (7 x 7 in sheets for Save as PDF, no Layout) | ✅ | ✅ |
 
 `RequireAuth` shows the sign-in screen until a household member is signed in and matched to a `users` row (it also calls `rpc('is_household')`). The session persists in localStorage (`kristory-auth`). Sign out is in Settings > Account; it calls `supabase.removeAllChannels()` and the React Query cache is cleared.
 
@@ -252,7 +254,7 @@ All app tables run with **RLS disabled** (no Supabase Auth; the client is truste
   - `UNIQUE(book_id, entry_id)`; indexes `book_items_book_id_idx (book_id, sort_key)`, `book_items_entry_id_idx`.
   - REPLICA IDENTITY FULL; added to `supabase_realtime`.
 - Both tables: RLS on, `household_only` policy, anon revoked, `select, insert, update, delete` to `authenticated, service_role`.
-- Pages are not stored; `src/book/paginate.ts` computes them.
+- Pages are not stored; `src/book/paginate.ts` computes them. Layout components: `src/book/layouts/` (from `docs/book-layouts/*.dc.html`); catalog and `chooseLayout()`: `src/book/catalog.ts`.
 
 ---
 

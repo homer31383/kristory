@@ -2,11 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { format, formatDistanceToNow, parse } from 'date-fns'
 import {
-  useBook,
-  useBookEntries,
-  useBookItems,
   useBookItemsRealtime,
-  useBookMilestones,
   useDeleteBook,
   useKristoryUsers,
   usePhotoSizeBackfill,
@@ -14,8 +10,9 @@ import {
   useUpdateBook,
   useUpdateBookItems,
 } from '../hooks/useBooks'
-import { buildItemView, type BookMilestone, type BookPhoto, type ItemView } from '../book/model'
-import { paginate, type BookPage, type ItemFlag } from '../book/paginate'
+import { useBookPagination } from '../hooks/useBookPagination'
+import type { ItemView } from '../book/model'
+import type { BookPage, ItemFlag } from '../book/paginate'
 import { AuthorBadge, FlagChip, PageThumb } from '../book/components'
 import type { Book, BookAuthors } from '../types'
 
@@ -44,10 +41,7 @@ function pageRange(pages: number[] | undefined) {
 export default function BookReview() {
   const { bookId } = useParams<{ bookId: string }>()
   const navigate = useNavigate()
-  const { data: book, isLoading: bookLoading } = useBook(bookId)
-  const { data: entries, isLoading: entriesLoading, error: entriesError } = useBookEntries(book)
-  const { data: items, isLoading: itemsLoading } = useBookItems(bookId)
-  const { data: milestones = [] } = useBookMilestones()
+  const { book, entries, items, isLoading, error: entriesError, views, pagination, bookTrip, measured } = useBookPagination(bookId)
   const { data: users = [] } = useKristoryUsers()
   const updateItems = useUpdateBookItems(bookId ?? '')
   const [filter, setFilter] = useState<Filter>('all')
@@ -59,32 +53,7 @@ export default function BookReview() {
 
   const userName = useMemo(() => new Map(users.map((u) => [u.id, u.name])), [users])
 
-  const { views, viewById, photoById, pagination, bookTrip } = useMemo(() => {
-    const photoById = new Map<string, BookPhoto>()
-    const entryById = new Map((entries ?? []).map((e) => [e.id, e]))
-    for (const e of entries ?? []) for (const p of e.photos) photoById.set(p.id, { ...p, entry_date: e.entry_date })
-    const milestoneByEntry = new Map<string, BookMilestone>(milestones.map((m) => [m.entry_id, m]))
-
-    const views: ItemView[] = []
-    if (book) {
-      for (const item of items ?? []) {
-        const entry = entryById.get(item.entry_id)
-        if (entry) views.push(buildItemView(item, entry, book, photoById, milestoneByEntry))
-      }
-      views.sort((a, b) => a.item.sort_key - b.item.sort_key || a.entry.entry_date.localeCompare(b.entry.entry_date))
-    }
-    const bookTrip =
-      book?.trip_id ? entries?.flatMap((e) => e.trip_entries).find((te) => te.trip?.id === book.trip_id)?.trip ?? null : null
-    return {
-      views,
-      viewById: new Map(views.map((v) => [v.item.id, v])),
-      photoById,
-      pagination: book ? paginate(book, views, bookTrip) : null,
-      bookTrip,
-    }
-  }, [book, entries, items, milestones])
-
-  if (bookLoading || (book && (entriesLoading || itemsLoading))) {
+  if (isLoading) {
     return (
       <div className="space-y-3">
         {[1, 2, 3, 4].map((i) => (
@@ -152,6 +121,20 @@ export default function BookReview() {
           {book.title}
         </h1>
         <button
+          onClick={() => navigate(`/book/${book.id}/preview`)}
+          className="px-3 py-2 rounded-lg text-xs font-medium border cursor-pointer"
+          style={{ borderColor: 'var(--border-card)', color: 'var(--text-secondary)' }}
+        >
+          Preview
+        </button>
+        <button
+          onClick={() => navigate(`/book/${book.id}/print`)}
+          className="hidden md:block px-3 py-2 rounded-lg text-xs font-medium border cursor-pointer"
+          style={{ borderColor: 'var(--border-card)', color: 'var(--text-secondary)' }}
+        >
+          Print
+        </button>
+        <button
           onClick={() => setShowSettings(!showSettings)}
           className="px-3 py-2 rounded-lg text-xs font-medium border cursor-pointer"
           style={{ borderColor: 'var(--border-card)', color: 'var(--text-secondary)' }}
@@ -182,6 +165,11 @@ export default function BookReview() {
           </span>
           <span style={{ color: 'var(--text-secondary)' }}>{doneCount} of {includedCount} done</span>
         </div>
+        {pagination && !measured && (
+          <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+            Loading the book fonts. Page counts are estimates until they load.
+          </p>
+        )}
         {measuring && (
           <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
             Measuring older photos ({measuring.done} of {measuring.total}). Layouts and DPI flags fill in as it goes.
@@ -190,7 +178,7 @@ export default function BookReview() {
       </div>
 
       {pagination && (
-        <Filmstrip pages={pagination.pages} photoById={photoById} viewById={viewById} onPick={scrollToItem} />
+        <Filmstrip pages={pagination.pages} onPick={scrollToItem} />
       )}
 
       <BulkActions views={views} onSetIncluded={setIncluded} />
@@ -251,13 +239,9 @@ export default function BookReview() {
 
 function Filmstrip({
   pages,
-  photoById,
-  viewById,
   onPick,
 }: {
   pages: BookPage[]
-  photoById: Map<string, BookPhoto>
-  viewById: Map<string, ItemView>
   onPick: (itemId: string) => void
 }) {
   // Page 1 sits alone on the right of the first spread.
@@ -278,8 +262,6 @@ function Filmstrip({
                     key={page.number}
                     page={page}
                     size={size}
-                    photoById={photoById}
-                    viewById={viewById}
                     onClick={page.itemIds[0] ? () => onPick(page.itemIds[0]) : undefined}
                   />
                 ) : (

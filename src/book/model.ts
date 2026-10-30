@@ -1,5 +1,5 @@
 import type { Book, BookAuthors, BookItem, BookPhotoSlot, EntryPhoto } from '../types'
-import { hiddenTextChanged, sectionPlainText, visibleText, wordCount } from './text'
+import { hiddenTextChanged, sectionRich, tokensText, visibleTokens, wordCount, type RichText, type Token } from './text'
 
 // ── What the book reads from the journal ────────────────────────────────────
 
@@ -24,7 +24,7 @@ export interface BookEntry {
   entry_date: string
   sections: BookEntrySection[]
   photos: EntryPhoto[]
-  tagged_items: { id: string; category: { id: string; name: string; emoji: string | null } | null }[]
+  tagged_items: { id: string; name: string; category: { id: string; name: string; emoji: string | null } | null }[]
   trip_entries: { trip: BookTrip | null }[]
 }
 
@@ -62,16 +62,16 @@ export function isPortrait(p: EntryPhoto): boolean {
   return !!px && px.h > px.w
 }
 
-// sectionPlainText parses HTML, so cache it per section version.
-const plainCache = new Map<string, string>()
-function plainTextOf(s: BookEntrySection): string {
+// sectionRich parses HTML, so cache it per section version.
+const richCache = new Map<string, RichText>()
+function richOf(s: BookEntrySection): RichText {
   const key = `${s.id}:${s.updated_at}`
-  let text = plainCache.get(key)
-  if (text === undefined) {
-    text = sectionPlainText(s.content)
-    plainCache.set(key, text)
+  let rich = richCache.get(key)
+  if (rich === undefined) {
+    rich = sectionRich(s.content)
+    richCache.set(key, rich)
   }
-  return text
+  return rich
 }
 
 // ── Per-item view ────────────────────────────────────────────────────────────
@@ -80,7 +80,10 @@ export interface ItemSectionView {
   section: BookEntrySection
   author: AuthorKey | null
   name: string
+  /** Plain text; hidden-text offsets point into this. */
   text: string
+  /** Visible words with bold/italic marks, hidden passages removed. */
+  tokens: Token[]
   visible: string
   words: number
   changed: boolean
@@ -97,12 +100,36 @@ export interface ItemView {
   trip: BookTrip | null
   milestone: BookMilestone | null
   categoryIds: string[]
+  /** "Ate" style rows from the entry's tagged items. */
+  facts: { label: string; value: string }[]
   textChanged: boolean
+}
+
+const FOOD_CATEGORIES = new Set(['restaurants', 'home cooking'])
+
+/** Tagged items as label/value rows, food first, at most two rows. */
+function entryFacts(entry: BookEntry): { label: string; value: string }[] {
+  const groups = new Map<string, string[]>()
+  for (const t of entry.tagged_items) {
+    const cat = (t.category?.name ?? '').trim()
+    if (!cat || !t.name?.trim()) continue
+    const label = FOOD_CATEGORIES.has(cat.toLowerCase()) ? 'Ate' : cat
+    const list = groups.get(label) ?? []
+    if (!list.includes(t.name.trim())) list.push(t.name.trim())
+    groups.set(label, list)
+  }
+  return [...groups.entries()]
+    .sort((a, b) => (a[0] === 'Ate' ? -1 : b[0] === 'Ate' ? 1 : 0))
+    .slice(0, 2)
+    .map(([label, names]) => ({ label, value: names.join(', ') }))
 }
 
 function entrySections(entry: BookEntry, include: BookAuthors) {
   return entry.sections
-    .map((s) => ({ s, author: authorKey(s.user?.name), text: plainTextOf(s) }))
+    .map((s) => {
+      const rich = richOf(s)
+      return { s, author: authorKey(s.user?.name), rich, text: rich.text }
+    })
     .filter((x) => x.text && authorAllowed(x.author, include))
     .sort((a, b) => (a.s.user?.name ?? '').localeCompare(b.s.user?.name ?? ''))
 }
@@ -114,16 +141,17 @@ export function buildItemView(
   photoById: Map<string, BookPhoto>,
   milestoneByEntry: Map<string, BookMilestone>,
 ): ItemView {
-  const sections: ItemSectionView[] = entrySections(entry, book.include_authors).map(({ s, author, text }) => {
+  const sections: ItemSectionView[] = entrySections(entry, book.include_authors).map(({ s, author, rich, text }) => {
     const ranges = item.hidden_text.filter((r) => r.section_id === s.id)
-    const visible = visibleText(text, ranges)
+    const tokens = visibleTokens(rich, ranges)
     return {
       section: s,
       author,
       name: s.user?.name ?? '',
       text,
-      visible,
-      words: wordCount(visible),
+      tokens,
+      visible: tokensText(tokens),
+      words: tokens.length,
       changed: hiddenTextChanged(text, ranges),
     }
   })
@@ -143,6 +171,7 @@ export function buildItemView(
     trip: entry.trip_entries.find((te) => te.trip)?.trip ?? null,
     milestone: milestoneByEntry.get(entry.id) ?? null,
     categoryIds: [...new Set(entry.tagged_items.map((t) => t.category?.id).filter((id): id is string => !!id))],
+    facts: entryFacts(entry),
     textChanged: sections.some((s) => s.changed),
   }
 }

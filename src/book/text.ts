@@ -1,21 +1,70 @@
+import { sanitizeHtml } from '../lib/helpers'
 import type { BookHiddenRange } from '../types'
 
 /**
- * A section's plain text, as the book sees it. Hidden-text offsets point into
- * exactly this string, so keep it deterministic: paragraphs are separated by
- * a blank line, <br> becomes a newline, tags are dropped, entities decoded.
+ * Entry text as the book sees it. A section's Tiptap HTML (bold and italic
+ * only) becomes one plain string plus a mark per character. Hidden-text
+ * offsets point into exactly this string, so keep it deterministic:
+ * paragraphs are separated by a blank line, <br> is a newline, empty
+ * paragraphs add nothing, and the ends are trimmed.
  */
+
+export const MARK_BOLD = 1
+export const MARK_ITALIC = 2
+
+export interface RichText {
+  text: string
+  marks: number[]
+}
+
+export function sectionRich(html: string | null | undefined): RichText {
+  if (!html) return { text: '', marks: [] }
+  const doc = new DOMParser().parseFromString(sanitizeHtml(html), 'text/html')
+  let text = ''
+  const marks: number[] = []
+  let pending = ''
+
+  const append = (s: string, m: number) => {
+    for (const ch of s) {
+      text += ch
+      marks.push(m)
+    }
+  }
+  const walk = (node: Node, m: number) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const t = (node as Text).data.replace(/\r\n?/g, '\n')
+      if (!/\S/.test(t)) {
+        if (!pending && text) append(t, m)
+        return
+      }
+      if (pending && text) append(pending, 0)
+      pending = ''
+      append(t, m)
+      return
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return
+    const tag = (node as Element).tagName.toLowerCase()
+    if (tag === 'br') {
+      if (text && !pending) append('\n', m)
+      return
+    }
+    const next = tag === 'strong' || tag === 'b' ? m | MARK_BOLD : tag === 'em' || tag === 'i' ? m | MARK_ITALIC : m
+    if (tag === 'p' && text) pending = '\n\n'
+    node.childNodes.forEach((c) => walk(c, next))
+    if (tag === 'p' && text) pending = '\n\n'
+  }
+  doc.body.childNodes.forEach((c) => walk(c, 0))
+
+  // Trim both ends, keeping marks aligned.
+  let start = 0
+  let end = text.length
+  while (start < end && /\s/.test(text[start])) start++
+  while (end > start && /\s/.test(text[end - 1])) end--
+  return { text: text.slice(start, end), marks: marks.slice(start, end) }
+}
+
 export function sectionPlainText(html: string | null | undefined): string {
-  if (!html) return ''
-  const marked = html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>\s*/gi, '\n\n')
-  const doc = new DOMParser().parseFromString(marked, 'text/html')
-  return (doc.body.textContent ?? '')
-    .replace(/\r\n?/g, '\n')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
+  return sectionRich(html).text
 }
 
 export function wordCount(text: string): number {
@@ -55,22 +104,86 @@ export function resolveHiddenRanges(
   return out.sort((a, b) => a.start - b.start)
 }
 
-/** The text with hidden passages removed. */
-export function visibleText(text: string, ranges: BookHiddenRange[]): string {
-  if (ranges.length === 0) return text
-  let out = ''
-  let cursor = 0
-  for (const r of resolveHiddenRanges(text, ranges)) {
-    if (r.start > cursor) out += text.slice(cursor, r.start)
-    cursor = Math.max(cursor, r.end)
-  }
-  out += text.slice(cursor)
-  return out.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
-}
-
 /** True when any hidden range was made against text that has since changed. */
 export function hiddenTextChanged(text: string, ranges: BookHiddenRange[]): boolean {
   if (ranges.length === 0) return false
   const hash = hashText(text)
   return ranges.some((r) => r.source_hash !== hash)
+}
+
+// ── Words, for flowing text across pages ─────────────────────────────────────
+
+export interface Seg {
+  t: string
+  m: number
+}
+
+/** One word: its characters (with marks) and the space after it. */
+export interface Token {
+  segs: Seg[]
+  ws: string
+}
+
+/** The visible words of a section, with hidden ranges removed. */
+export function visibleTokens(rich: RichText, ranges: BookHiddenRange[]): Token[] {
+  const { text, marks } = rich
+  const hidden = new Uint8Array(text.length)
+  for (const r of resolveHiddenRanges(text, ranges)) hidden.fill(1, r.start, Math.min(r.end, text.length))
+
+  const tokens: Token[] = []
+  let cur: Token | null = null
+  for (let i = 0; i < text.length; i++) {
+    if (hidden[i]) continue
+    const ch = text[i]
+    if (/\s/.test(ch)) {
+      if (cur) cur.ws += ch
+      continue
+    }
+    if (!cur || cur.ws) {
+      cur = { segs: [], ws: '' }
+      tokens.push(cur)
+    }
+    const last = cur.segs[cur.segs.length - 1]
+    if (last && last.m === marks[i]) last.t += ch
+    else cur.segs.push({ t: ch, m: marks[i] })
+  }
+  tokens.forEach((t, i) => {
+    t.ws = i === tokens.length - 1 ? '' : t.ws.includes('\n\n') ? '\n\n' : t.ws.includes('\n') ? '\n' : ' '
+  })
+  return tokens
+}
+
+/** Runs of same-marked text, ready to render. */
+export function tokenRuns(tokens: Token[]): Seg[] {
+  const runs: Seg[] = []
+  tokens.forEach((tok, i) => {
+    for (const s of tok.segs) {
+      const last = runs[runs.length - 1]
+      if (last && last.m === s.m) last.t += s.t
+      else runs.push({ t: s.t, m: s.m })
+    }
+    const ws = i === tokens.length - 1 ? '' : tok.ws
+    if (ws) runs[runs.length - 1].t += ws
+  })
+  return runs
+}
+
+export function tokensText(tokens: Token[]): string {
+  return tokens.map((t, i) => t.segs.map((s) => s.t).join('') + (i === tokens.length - 1 ? '' : t.ws)).join('')
+}
+
+function escapeHtml(s: string) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/** Same output as the React renderer, as an HTML string (for measuring). */
+export function runsToHtml(runs: Seg[]): string {
+  return runs
+    .map((r) => {
+      let h = escapeHtml(r.t)
+      if (r.m & MARK_ITALIC) h = `<em>${h}</em>`
+      if (r.m & MARK_BOLD) h = `<strong>${h}</strong>`
+      return h
+    })
+    .join('')
 }

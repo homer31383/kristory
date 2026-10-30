@@ -299,9 +299,13 @@ export type ThemeMode = 'light' | 'dark' | 'system'
 export type BookAuthors = 'both' | 'chris' | 'krista'
 
 export interface BookCoverChoice {
+  /** 'b' (CoverScript, the default) or 'a' (Main). */
+  style?: 'a' | 'b'
   photo_id?: string | null
+  back_photo_id?: string | null
   title?: string | null
   subtitle?: string | null
+  back_quote?: string | null
 }
 
 export interface Book {

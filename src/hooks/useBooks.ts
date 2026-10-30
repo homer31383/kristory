@@ -10,7 +10,7 @@ const BOOK_ENTRY_SELECT =
   'id, entry_date, ' +
   'sections:entry_sections!entry_id(id, user_id, content, updated_at, user:users!user_id(id, name)), ' +
   'photos:entry_photos!entry_id(*), ' +
-  'tagged_items:tagged_items!entry_id(id, category:categories!category_id(id, name, emoji)), ' +
+  'tagged_items:tagged_items!entry_id(id, name, category:categories!category_id(id, name, emoji)), ' +
   'trip_entries:trip_entries!entry_id(trip:trips!trip_id(id, title, start_date, end_date, cover_photo_path))'
 
 type QueryResult = PromiseLike<{ data: unknown; error: { message: string } | null }>
@@ -119,7 +119,7 @@ async function insertDrafts(rows: ReturnType<typeof draftItem>[]) {
 export function useUpdateBook() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, patch }: { id: string; patch: Partial<NewBook> }) => {
+    mutationFn: async ({ id, patch }: { id: string; patch: Partial<NewBook & Pick<Book, 'cover_choice'>> }) => {
       const { data, error } = await supabase
         .from('book_books')
         .update({ ...patch, updated_at: new Date().toISOString() })
